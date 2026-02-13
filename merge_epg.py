@@ -1,70 +1,90 @@
 #!/usr/bin/env python3
 import gzip
-import requests
 from lxml import etree
 from datetime import datetime
 import pytz
 
-# --- CONFIG ---
-OUTPUT_XML_GZ = "merged.xml.gz"
-TIMEZONE = "America/New_York"  # local time zone for display
+# -----------------------------
+# CONFIG: Only keep local + important channels
+# -----------------------------
+LOCAL_CHANNELS = {
+    "HUT-TV", "WRC-TV", "WZDC-CD", "WTTG", "WHUT-TV", "WDCA",
+    "WDCN-LD", "WJLA-TV", "WJAL", "WUSA", "WDCO-CD", "WFDC-DT",
+    "WDCW", "WMPT", "WDDN-LD", "WDWA-LD", "WDVM-TV", "WETA-TV",
+    "WRZB-LD", "W13DW-D", "W10DE-D", "WWTD-LD", "WMDO-CD",
+    "WPXW-TV", "WIAV-CD", "WFPT"
+}
 
-# Channels to keep (local DC/MD/VA + key internationals)
-KEEP_CHANNELS = [
-    # DC/MD/VA locals
-    "WRC", "WRC-HD", "WUSA", "WUSA-HD", "WJLA", "WJLA-TV", "WTTG", "WDCA",
-    "WFDC-DT", "WDCW", "WETA", "WMPT", "WZDC", "WHUT",
-    # Key international channels
-    "MBC MASR", "MBC MASR 2", "MBC 1 Aghani", "Nogoum", "Balle Balle",
-    "9X Jalwa", "MTV India"
-]
-
-# --- SOURCES ---
-EPG_SOURCES = [
+INPUT_URLS = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-    "https://iptv-epg.org/files/epg-in.xml.gz",
-    "https://www.open-epg.com/files/india3.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 ]
 
-# --- MERGE LOGIC ---
-all_channels = {}
-all_programs = []
+OUTPUT_XML = "merged.xml.gz"
+INDEX_HTML = "index.html"
 
-for url in EPG_SOURCES:
+# -----------------------------
+# Function to download and parse XML
+# -----------------------------
+import requests
+def download_xml(url):
     print(f"Downloading {url} ...")
-    resp = requests.get(url, timeout=None)  # no timeout, will wait until complete
-    resp.raise_for_status()
+    r = requests.get(url, timeout=None)  # no timeout
+    r.raise_for_status()
+    return etree.fromstring(r.content)
 
-    with gzip.GzipFile(fileobj=resp.raw) as f:
-        tree = etree.parse(f)
+# -----------------------------
+# Merge XMLs
+# -----------------------------
+merged = etree.Element("tv")
 
-    # Extract channels
-    for ch in tree.xpath("//channel"):
-        ch_id = ch.get("id")
-        display_name = ch.findtext("display-name")
-        if any(k.lower() in (display_name or "").lower() for k in KEEP_CHANNELS):
-            all_channels[ch_id] = ch
+channels_kept = 0
+programs_kept = 0
 
-    # Extract programs
-    for pr in tree.xpath("//programme"):
-        if pr.get("channel") in all_channels:
-            all_programs.append(pr)
+for url in INPUT_URLS:
+    try:
+        root = download_xml(url)
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        continue
 
-# --- WRITE MERGED XML ---
-tv = etree.Element("tv")
-for ch in all_channels.values():
-    tv.append(ch)
-for pr in all_programs:
-    tv.append(pr)
+    for channel in root.findall("channel"):
+        if channel.get("id") not in LOCAL_CHANNELS:
+            continue
+        merged.append(channel)
+        channels_kept += 1
 
-# Add last updated time in local timezone
-local_time = datetime.now(pytz.timezone(TIMEZONE))
-tv.set("lastUpdated", local_time.strftime("%Y-%m-%d %H:%M:%S %Z"))
+    for programme in root.findall("programme"):
+        if programme.get("channel") in LOCAL_CHANNELS:
+            merged.append(programme)
+            programs_kept += 1
 
-with gzip.open(OUTPUT_XML_GZ, "wb") as f:
-    f.write(etree.tostring(tv, pretty_print=True, xml_declaration=True, encoding="UTF-8"))
+# -----------------------------
+# Write gzipped XML
+# -----------------------------
+with gzip.open(OUTPUT_XML, "wb") as f:
+    f.write(etree.tostring(merged, encoding="UTF-8", xml_declaration=True))
 
-print(f"EPG merge completed\nLast updated: {local_time}\nChannels kept: {len(all_channels)}\nPrograms kept: {len(all_programs)}")
+# -----------------------------
+# Update index.html with local time
+# -----------------------------
+local_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EPG Merge Status</title>
+</head>
+<body>
+    <h1>EPG merge completed</h1>
+    <p>Last updated: {local_time}</p>
+    <p>Channels kept: {channels_kept}</p>
+    <p>Programs kept: {programs_kept}</p>
+</body>
+</html>"""
+
+with open(INDEX_HTML, "w") as f:
+    f.write(html_content)
+
+print(f"EPG merge completed\nLast updated: {local_time}\nChannels kept: {channels_kept}\nPrograms kept: {programs_kept}")
 
