@@ -3,10 +3,10 @@ name: Merge EPG Daily
 on:
   push:
     branches:
-      - main        # auto-run on push
+      - main        # Run when code is pushed
   schedule:
-    - cron: '0 5 * * *'  # daily at 05:00 UTC
-  workflow_dispatch:       # allows manual run
+    - cron: '0 5 * * *'  # Daily at 05:00 UTC
+  workflow_dispatch:       # Manual run option
 
 jobs:
   merge-epg:
@@ -29,9 +29,17 @@ jobs:
       - name: Run EPG merge script
         run: python merge_epg.py
 
+      - name: Commit updated files
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add merged.xml.gz index.html
+          git commit -m "Daily EPG merge update" || echo "No changes to commit"
+          git push origin main
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./      # deploy root (matches our updated merge_epg.py)
+          publish_dir: ./      # deploy root
 
