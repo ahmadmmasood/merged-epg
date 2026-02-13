@@ -1,90 +1,109 @@
 #!/usr/bin/env python3
+import requests
 import gzip
+import io
 from lxml import etree
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
-# -----------------------------
-# CONFIG: Only keep local + important channels
-# -----------------------------
-LOCAL_CHANNELS = {
-    "HUT-TV", "WRC-TV", "WZDC-CD", "WTTG", "WHUT-TV", "WDCA",
-    "WDCN-LD", "WJLA-TV", "WJAL", "WUSA", "WDCO-CD", "WFDC-DT",
-    "WDCW", "WMPT", "WDDN-LD", "WDWA-LD", "WDVM-TV", "WETA-TV",
-    "WRZB-LD", "W13DW-D", "W10DE-D", "WWTD-LD", "WMDO-CD",
-    "WPXW-TV", "WIAV-CD", "WFPT"
-}
-
-INPUT_URLS = [
+# -----------------------
+# CONFIG
+# -----------------------
+EPG_SOURCES = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+    # Add any important international sources here
 ]
 
+KEEP_CHANNELS = [
+    # Local DC area channels
+    "WRC-TV", "WZDC-CD", "WTTG", "WDCA", "WJLA-TV", "WHUT-TV",
+    "WUSA", "WJAL", "WFDC-DT", "WDCW", "WMPT", "WETA-TV",
+    "WRZB-LD", "WDVM-TV", "WPXW-TV", "WDWA-LD", "WMDO-CD",
+]
+
+# Keep programs only for the last X days
+DAYS_TO_KEEP = 5
+
 OUTPUT_XML = "merged.xml.gz"
-INDEX_HTML = "index.html"
+OUTPUT_HTML = "index.html"
 
-# -----------------------------
-# Function to download and parse XML
-# -----------------------------
-import requests
-def download_xml(url):
-    print(f"Downloading {url} ...")
-    r = requests.get(url, timeout=None)  # no timeout
-    r.raise_for_status()
-    return etree.fromstring(r.content)
+LOCAL_TZ = pytz.timezone("America/New_York")  # change if needed
 
-# -----------------------------
-# Merge XMLs
-# -----------------------------
-merged = etree.Element("tv")
+# -----------------------
+# DOWNLOAD AND MERGE
+# -----------------------
+merged_root = etree.Element("tv")
 
-channels_kept = 0
+channels_added = set()
 programs_kept = 0
 
-for url in INPUT_URLS:
-    try:
-        root = download_xml(url)
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        continue
+for url in EPG_SOURCES:
+    print(f"Downloading {url} ...")
+    r = requests.get(url, timeout=None)
+    r.raise_for_status()
+    
+    with gzip.open(io.BytesIO(r.content), "rb") as f:
+        tree = etree.parse(f)
+        root = tree.getroot()
+        
+        # Channels
+        for ch in root.findall("channel"):
+            ch_id = ch.get("id")
+            if ch_id in KEEP_CHANNELS and ch_id not in channels_added:
+                merged_root.append(ch)
+                channels_added.add(ch_id)
+        
+        # Programs
+        cutoff = datetime.now(pytz.utc) - timedelta(days=DAYS_TO_KEEP)
+        for prog in root.findall("programme"):
+            ch_id = prog.get("channel")
+            start_str = prog.get("start")  # e.g., '20260213200000 +0000'
+            if not ch_id or ch_id not in KEEP_CHANNELS:
+                continue
+            # Parse start time
+            try:
+                start_time = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
+                start_time = pytz.utc.localize(start_time)
+            except Exception:
+                continue
+            if start_time >= cutoff:
+                merged_root.append(prog)
+                programs_kept += 1
 
-    for channel in root.findall("channel"):
-        if channel.get("id") not in LOCAL_CHANNELS:
-            continue
-        merged.append(channel)
-        channels_kept += 1
-
-    for programme in root.findall("programme"):
-        if programme.get("channel") in LOCAL_CHANNELS:
-            merged.append(programme)
-            programs_kept += 1
-
-# -----------------------------
-# Write gzipped XML
-# -----------------------------
+# -----------------------
+# WRITE XML.GZ
+# -----------------------
+tree = etree.ElementTree(merged_root)
 with gzip.open(OUTPUT_XML, "wb") as f:
-    f.write(etree.tostring(merged, encoding="UTF-8", xml_declaration=True))
+    tree.write(f, encoding="UTF-8", xml_declaration=True)
 
-# -----------------------------
-# Update index.html with local time
-# -----------------------------
-local_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-html_content = f"""<!DOCTYPE html>
-<html lang="en">
+# -----------------------
+# WRITE INDEX.HTML
+# -----------------------
+now_local = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+html_content = f"""
+<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>EPG Merge Status</title>
+<title>EPG Merge Status</title>
+<meta charset="UTF-8">
 </head>
 <body>
-    <h1>EPG merge completed</h1>
-    <p>Last updated: {local_time}</p>
-    <p>Channels kept: {channels_kept}</p>
-    <p>Programs kept: {programs_kept}</p>
+<h1>EPG Merge Status</h1>
+<p><strong>Last updated:</strong> {now_local}</p>
+<p><strong>Channels kept:</strong> {len(channels_added)}</p>
+<p><strong>Programs kept:</strong> {programs_kept}</p>
 </body>
-</html>"""
+</html>
+"""
 
-with open(INDEX_HTML, "w") as f:
+with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print(f"EPG merge completed\nLast updated: {local_time}\nChannels kept: {channels_kept}\nPrograms kept: {programs_kept}")
+print(f"EPG merge completed")
+print(f"Last updated: {now_local}")
+print(f"Channels kept: {len(channels_added)}")
+print(f"Programs kept: {programs_kept}")
 
