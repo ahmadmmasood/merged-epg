@@ -1,9 +1,12 @@
 name: Merge EPG Daily
 
 on:
+  push:
+    branches:
+      - main        # auto-run on push
   schedule:
-    - cron: '0 5 * * *'
-  workflow_dispatch:
+    - cron: '0 5 * * *'  # daily at 05:00 UTC
+  workflow_dispatch:       # allows manual run
 
 jobs:
   merge-epg:
