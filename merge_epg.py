@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-
 import gzip
+import datetime
 import requests
-import lxml.etree as ET
-from datetime import datetime
-import pytz
-import os
+from lxml import etree
+from io import BytesIO
 
-# --- CONFIG ---
+# =========================
+# CONFIGURATION
+# =========================
 EPG_SOURCES = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
@@ -16,86 +16,106 @@ EPG_SOURCES = [
     "https://www.open-epg.com/files/unitedstates10.xml.gz"
 ]
 
-MERGED_FILE = "merged.xml.gz"
-INDEX_FILE = "index.html"
-CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+OUTPUT_XML = "merged.xml"
+OUTPUT_GZ = "merged.xml.gz"
+INDEX_HTML = "index.html"
 
-# --- FUNCTIONS ---
-def download_gz(url, local_path):
-    print(f"Downloading: {url}")
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    with open(local_path, "wb") as f:
-        total = 0
-        for chunk in response.iter_content(CHUNK_SIZE):
-            if chunk:
-                f.write(chunk)
-                total += len(chunk)
-        print(f"Downloaded {total / (1024*1024):.2f} MB")
-    return local_path
+DAYS_AHEAD = 5  # Only keep 5 days of programs
 
-def load_xml_from_gz(path):
-    with gzip.open(path, "rb") as f:
-        tree = ET.parse(f)
-    return tree
+# =========================
+# HELPER FUNCTIONS
+# =========================
+def download_gz(url):
+    print(f"Downloading {url} ...")
+    r = requests.get(url, stream=True, timeout=None)
+    r.raise_for_status()
+    return gzip.decompress(r.content)
 
-def merge_tvsources(sources):
-    merged_root = ET.Element("tv")
-    channel_ids = set()
-    program_count = 0
+def parse_xml(content):
+    return etree.parse(BytesIO(content))
 
-    for i, url in enumerate(sources):
-        temp_file = f"temp_{i}.xml.gz"
-        download_gz(url, temp_file)
-        tree = load_xml_from_gz(temp_file)
-        root = tree.getroot()
+def filter_programs(tv_element):
+    now = datetime.datetime.utcnow()
+    cutoff = now + datetime.timedelta(days=DAYS_AHEAD)
+    for channel in tv_element.findall("channel"):
+        programs = channel.xpath("./programme")
+        for prog in programs:
+            start = prog.get("start")
+            if start:
+                prog_time = datetime.datetime.strptime(start[:14], "%Y%m%d%H%M%S")
+                if prog_time > cutoff:
+                    channel.remove(prog)
+    return tv_element
 
-        # Channels
-        for ch in root.findall("channel"):
-            ch_id = ch.get("id")
-            if ch_id not in channel_ids:
-                merged_root.append(ch)
-                channel_ids.add(ch_id)
+def deduplicate_channels(tv_element):
+    seen_ids = set()
+    for channel in tv_element.findall("channel"):
+        cid = channel.get("id")
+        if cid in seen_ids:
+            tv_element.remove(channel)
+        else:
+            seen_ids.add(cid)
+    return tv_element
 
-        # Programs
-        for prog in root.findall("programme"):
-            merged_root.append(prog)
-            program_count += 1
+# =========================
+# MERGE XML SOURCES
+# =========================
+root = etree.Element("tv")
+for url in EPG_SOURCES:
+    try:
+        content = download_gz(url)
+        tree = parse_xml(content)
+        tv = tree.getroot()
+        # Merge channels
+        for ch in tv.findall("channel"):
+            root.append(ch)
+        # Merge programs
+        for prog in tv.findall("programme"):
+            root.append(prog)
+    except Exception as e:
+        print(f"Failed {url}: {e}")
 
-        os.remove(temp_file)
+# Filter old programs
+root = filter_programs(root)
+# Deduplicate channels
+root = deduplicate_channels(root)
 
-    return merged_root, len(channel_ids), program_count
+# =========================
+# WRITE MERGED XML AND GZ
+# =========================
+tree = etree.ElementTree(root)
+tree.write(OUTPUT_XML, encoding="UTF-8", xml_declaration=True)
+with open(OUTPUT_XML, "rb") as f_in, gzip.open(OUTPUT_GZ, "wb", compresslevel=9) as f_out:
+    f_out.writelines(f_in)
 
-def save_merged_xml(root, path):
-    tree = ET.ElementTree(root)
-    with gzip.open(path, "wb") as f:
-        tree.write(f, xml_declaration=True, encoding="UTF-8")
-    print(f"Merged XML saved to {path}")
+# =========================
+# UPDATE INDEX.HTML WITH STATUS
+# =========================
+local_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+channels_count = len(root.findall("channel"))
+programs_count = len(root.findall("programme"))
 
-def update_index_html(channels, programs, index_path):
-    local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-    content = f"""
+html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>EPG Merge Status</title>
+<meta charset="UTF-8">
+<title>EPG Merge Status</title>
 </head>
 <body>
-    <h1>EPG merge completed</h1>
-    <p>Last updated: {local_time}</p>
-    <p>Channels kept: {channels}</p>
-    <p>Programs kept: {programs}</p>
+<h1>EPG Merge Status</h1>
+<p>Last updated: {local_time}</p>
+<p>Channels kept: {channels_count}</p>
+<p>Programs kept: {programs_count}</p>
 </body>
 </html>
 """
-    with open(index_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print(f"Index updated at {index_path}")
 
-# --- MAIN ---
-if __name__ == "__main__":
-    merged_root, channel_count, program_count = merge_tvsources(EPG_SOURCES)
-    save_merged_xml(merged_root, MERGED_FILE)
-    update_index_html(channel_count, program_count, INDEX_FILE)
+with open(INDEX_HTML, "w", encoding="utf-8") as f:
+    f.write(html_content)
+
+print(f"EPG merge completed")
+print(f"Last updated: {local_time}")
+print(f"Channels kept: {channels_count}")
+print(f"Programs kept: {programs_count}")
 
