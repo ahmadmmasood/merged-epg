@@ -1,99 +1,98 @@
 #!/usr/bin/env python3
-import requests, gzip, io
-from lxml import etree
-from datetime import datetime, timezone
+import gzip
+import requests
+import xml.etree.ElementTree as ET
+from datetime import datetime
 import os
 
-# ===== CONFIGURE YOUR FEEDS =====
-epg_sources = {
-    "US Main": "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "US Locals": "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-    "Indian 1": "https://iptv-epg.org/files/epg-in.xml.gz",
-    "Indian 2": "https://www.open-epg.com/files/india3.xml.gz",
-    "Digital TV": "https://www.open-epg.com/files/unitedstates10.xml.gz",
+# ====== CONFIG ======
+# Sources
+sources = {
+    "EPG_US": "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
+    "EPG_LOCALS": "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+    "Indian1": "https://iptv-epg.org/files/epg-in.xml.gz",
+    "Indian2": "https://www.open-epg.com/files/india3.xml.gz",
+    "DigitalTV": "https://www.open-epg.com/files/unitedstates10.xml.gz"
 }
 
-# ===== CHANNEL WHITELIST =====
-whitelist = {
-    # Local DC / Maryland / Northern Virginia
-    "wjla-dt", "wusa-dt", "wttg-dt", "wdca-dt", "wrc-dt", "wdcw-dt",
-    # PBS East Coast
-    "weta-dt", "wdcq-dt", "wcvp-dt", "wmpb-dt", "wcpb-dt",
-    # Local networks
-    "abc", "cbs", "fox", "nbc", "the cw", "pbs", "telemundo", "univision", "mynetworktv", "ion television", "telexitos",
-    # Premium / Movie Channels
-    "hbo", "max", "cinemax", "paramount+ with showtime", "starz", "starz encore", "mgm+", "the movie channel", "flix", "screenpix", "adult swimmax", "showtime",
-    # General entertainment
-    "a&e", "amc", "bravo", "comedy central", "freeform", "fx", "fxx", "lifetime", "paramount network", "tbs", "tnt", "trutv", "usa", "vh1", "wetv",
-    # News
-    "bbc america", "bloomberg", "cnbc", "cnn", "cnn international", "fox business", "fox news", "hln", "msnbc", "newsnation", "the weather channel",
-    # Sports (all timezones)
-    "espn", "espn2", "espnu", "espnews", "fox sports 1", "fox sports 2", "nba tv", "nfl network", "nhl network", "mlb network", "sec network", "tennis channel", "big ten network", "cbs sports network", "golf channel", "tyc sports", "tudn",
-    # Kids / Family
-    "boomerang", "cartoon network", "disney channel", "disney junior", "disney xd", "nickelodeon", "nick jr.", "nicktoons", "teenick", "babyfirst", "tv one", "telehit", "telehit musica", "tr3s: mtv",
-    # Lifestyle / Documentary
-    "animal planet", "cooking channel", "destination america", "discovery channel", "discovery life", "discovery family", "food network", "hgtv", "history channel", "investigation discovery", "id", "magnolia network", "national geographic", "own", "science channel", "tlc", "travel channel",
-    # Music / Variety
-    "bet", "bet soul", "cmt", "mtv", "mtv2", "mtv classic", "fuse",
-    # Classic / Religious / Other
-    "fetv", "gsn", "hallmark channel", "hallmark mystery", "hallmark drama", "insp", "metv", "ovation", "reelz", "tv land",
-}
+# Channels to keep (best effort)
+keep_channels = [
+    # DC/MD/VA locals
+    "WJLA-DT", "WUSA-DT", "WTTG-DT", "WDCA-DT", "WRC-DT", "WETA", "WMPT", "WFDC-DT", "WDCW", "WZDC-CD",
+    # Premium & major networks
+    "HBO", "HBO Zone", "HBO Comedy", "HBO Signature", "HBO2", "HBO East",
+    "Max", "Cinemax", "Paramount+", "STARZ", "STARZ ENCORE", "MGM+", "The Movie Channel", "Flix", "ScreenPix", "Adult SwimMax",
+    # General entertainment & news (East Coast)
+    "A&E", "AMC", "AHC", "Animal Planet", "Baby TV US", "BBC America HD", "Boomerang", "Bravo",
+    "Cartoon Network", "CNBC", "CMT", "CNN", "CNN International", "CourtTV", "Discovery Life", "Destination America",
+    "Discovery Channel HD", "Discovery Family", "Disney Channel", "Disney Junior", "Disney XD", "E!", "ESPN HD",
+    "ESPN2 HD", "ESPNews", "Fox Business", "Game Show Network", "Golf Channel", "HBO", "History HD", "HLN HD",
+    "ID", "IFC", "IndiePlex", "Love Nature", "MBC1", "MBC Masr", "MBC Masr2", "Nogoum", "Balle Balle",
+    "9X Jalwa", "MTV India", "National Geographic", "NBA", "NHL", "NFL", "Paramount Network", "Nick", "Nick Jr.",
+    "Showtime", "Starz", "Syfy", "TBS", "TNT", "TravelXP", "USA", "VHI", "TV Land",
+    # Local major networks
+    "ABC", "CBS", "FOX", "NBC", "The CW", "PBS", "Telemundo", "Univision", "MyNetworkTV", "ION Television",
+    "TeleXitos"
+]
 
-# ===== STATUS FILE =====
-status_file = "index.html"
-with open(status_file, "w") as f:
-    f.write(f"<html><body><h1>EPG merge in progress</h1><p>Started at {datetime.now(timezone.utc)} UTC</p></body></html>\n")
-
-# ===== HELPER FUNCTION =====
-def fetch_xml(url):
-    print(f"Downloading {url} ...")
+# ====== FUNCTIONS ======
+def download_xml_gz(url):
+    print(f"Downloading {url}")
     r = requests.get(url, stream=True)
     r.raise_for_status()
-    if url.endswith(".gz") or "gzip" in r.headers.get('Content-Type', ''):
-        with gzip.open(io.BytesIO(r.content), "rb") as f:
-            return etree.parse(f)
-    else:
-        return etree.fromstring(r.content)
+    return gzip.decompress(r.content)
 
-def channel_in_whitelist(ch_element):
-    names = [dn.text.lower() for dn in ch_element.xpath("display-name")]
-    return any(name in whitelist for name in names)
+def parse_xml(data):
+    return ET.fromstring(data)
 
-# ===== MERGE XML =====
-all_channels = {}
+def filter_channels(root):
+    channels_to_keep = []
+    programs_to_keep = []
+    
+    for channel in root.findall("channel"):
+        if any(ch.lower() in channel.get("id", "").lower() for ch in keep_channels):
+            channels_to_keep.append(channel)
+    
+    for program in root.findall("programme"):
+        if any(ch.get("id") in [c.get("id") for c in channels_to_keep] for ch in [program]):
+            programs_to_keep.append(program)
+    
+    return channels_to_keep, programs_to_keep
+
+def save_merged_xml(channels, programs, filename="merged.xml.gz"):
+    tv = ET.Element("tv")
+    tv.set("source", "Custom Merge EPG")
+    tv.set("last_updated", datetime.now().isoformat())  # local time
+    
+    for ch in channels:
+        tv.append(ch)
+    for pr in programs:
+        tv.append(pr)
+    
+    tree = ET.ElementTree(tv)
+    xml_bytes = ET.tostring(tree.getroot(), encoding="utf-8")
+    with gzip.open(filename, "wb") as f:
+        f.write(xml_bytes)
+    print(f"Merged EPG saved: {filename}")
+
+# ====== MAIN ======
+all_channels = []
 all_programs = []
 
-for name, url in epg_sources.items():
+for name, url in sources.items():
     try:
-        tree = fetch_xml(url)
-        print(f"Processing {name} ...")
-        for ch in tree.xpath("//channel"):
-            ch_id = ch.get("id")
-            if ch_id not in all_channels and channel_in_whitelist(ch):
-                all_channels[ch_id] = ch
-        for prog in tree.xpath("//programme"):
-            ch_id = prog.get("channel")
-            if ch_id in all_channels:
-                all_programs.append(prog)
+        data = download_xml_gz(url)
+        root = parse_xml(data)
+        channels, programs = filter_channels(root)
+        all_channels.extend(channels)
+        all_programs.extend(programs)
+        print(f"Processed {name}: {len(channels)} channels, {len(programs)} programs")
     except Exception as e:
-        print(f"Failed to fetch {name}: {e}")
+        print(f"Error processing {name}: {e}")
 
-# ===== CREATE MERGED TREE =====
-root = etree.Element("tv")
-for ch in all_channels.values():
-    root.append(ch)
-for prog in all_programs:
-    root.append(prog)
-
-# ===== WRITE OUTPUT XML.GZ TO ROOT =====
-merged_file = "merged.xml.gz"
-with gzip.open(merged_file, "wb") as f:
-    f.write(etree.tostring(root, xml_declaration=True, encoding="UTF-8"))
-
-# ===== UPDATE STATUS =====
-with open(status_file, "w") as f:
-    f.write(f"<html><body><h1>EPG merge completed</h1><p>Last updated: {datetime.now(timezone.utc)} UTC</p>")
-    f.write(f"<p>Channels kept: {len(all_channels)}</p><p>Programs kept: {len(all_programs)}</p></body></html>\n")
-
-print(f"Done! Merged EPG written to {merged_file}")
+save_merged_xml(all_channels, all_programs)
+print(f"EPG merge completed")
+print(f"Last updated: {datetime.now().isoformat()}")
+print(f"Channels kept: {len(all_channels)}")
+print(f"Programs kept: {len(all_programs)}")
 
