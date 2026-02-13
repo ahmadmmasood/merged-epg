@@ -1,76 +1,132 @@
 #!/usr/bin/env python3
-import requests
-import gzip
-import shutil
-import os
+import requests, gzip, io, os
+from lxml import etree
+from datetime import datetime, UTC
 
-# Create output folder if not exists
-os.makedirs("output", exist_ok=True)
+# ============================
+# REQUIRED CORE FEEDS
+# ============================
+CORE_FEEDS = {
+    "EPG 1": "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
+    "EPG 2": "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+    "Indian 1": "https://iptv-epg.org/files/epg-in.xml.gz",
+    "Indian 2": "https://www.open-epg.com/files/india3.xml.gz",
+    "Digital TV": "https://www.open-epg.com/files/unitedstates10.xml.gz",
+}
 
-# Function to update index.html with current status
-def update_status(message, done=False):
-    if done:
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head><meta charset="UTF-8"><title>EPG Ready</title></head>
-        <body>
-            <h1>EPG Merge Complete!</h1>
-            <p><a href="merged.xml.gz">Download the merged EPG XML</a></p>
-        </body>
-        </html>
-        """
-    else:
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head><meta charset="UTF-8"><title>EPG Merge Status</title></head>
-        <body>
-            <h1>EPG Merge in Progress</h1>
-            <p>Current step: {message}</p>
-        </body>
-        </html>
-        """
-    with open("output/index.html", "w") as f:
-        f.write(html_content)
-
-# List of EPG URLs to download
-epg_sources = [
-    ("US EPG", "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz"),
-    ("US Locals", "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"),
-    ("Indian 1", "https://iptv-epg.org/files/epg-in.xml.gz"),
-    ("Indian 2", "https://www.open-epg.com/files/india3.xml.gz"),
-    ("Digital TV", "https://www.open-epg.com/files/unitedstates10.xml.gz"),
+# ============================
+# LOCAL REGION KEYWORDS
+# ============================
+LOCAL_KEYWORDS = [
+    "washington", "dc", "wrc", "wttg", "wusa",
+    "baltimore", "wbal", "wjz", "maryland",
+    "northern virginia", "arlington", "fairfax"
 ]
 
-downloaded_files = []
+# ============================
+# EAST COAST FILTER
+# ============================
+EAST_MARKERS = ["east", "-e", "et", "est"]
+WEST_MARKERS = ["west", "-w", "pt", "mt", "ct", "pacific", "mountain"]
 
-for name, url in epg_sources:
-    update_status(f"Downloading {name}...")
-    r = requests.get(url, stream=True)
-    local_file = f"output/{name.replace(' ', '_')}.xml.gz"
-    with open(local_file, "wb") as f:
-        f.write(r.content)
-    downloaded_files.append(local_file)
+# ============================
+# SPORTS KEYWORDS
+# ============================
+SPORTS_KEYWORDS = [
+    "espn", "fox sports", "nbc sports",
+    "mlb", "nfl", "nba", "nhl",
+    "sec", "acc", "big ten"
+]
 
-# Merge files
-update_status("Merging EPG files...")
-merged_file = "output/merged.xml"
-with open(merged_file, "wb") as outfile:
-    for file in downloaded_files:
-        with gzip.open(file, "rb") as f:
-            shutil.copyfileobj(f, outfile)
+# ============================
+# Output paths (root)
+# ============================
+status_file = "index.html"
+merged_file = "merged.xml.gz"
 
-# Compress merged.xml to merged.xml.gz
-update_status("Compressing merged EPG...")
-with open(merged_file, "rb") as f_in:
-    with gzip.open("output/merged.xml.gz", "wb") as f_out:
-        shutil.copyfileobj(f_in, f_out)
+# Write initial status page
+with open(status_file, "w") as f:
+    f.write(f"<html><body><h1>EPG merge in progress</h1>"
+            f"<p>Started at {datetime.now(UTC)} UTC</p></body></html>\n")
 
-# Clean up temporary merged.xml if desired
-os.remove(merged_file)
+# ============================
+# FETCH XML
+# ============================
+def fetch_xml(url):
+    print(f"Downloading {url}")
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    if url.endswith(".gz"):
+        with gzip.open(io.BytesIO(r.content), "rb") as f:
+            return etree.parse(f)
+    else:
+        return etree.ElementTree(etree.fromstring(r.content))
 
-# Update index.html to final link
-update_status("EPG merge complete!", done=True)
-print("EPG merge finished: output/merged.xml.gz")
+# ============================
+# CHANNEL FILTER
+# ============================
+def keep_channel(display_names):
+    name_str = " ".join(display_names).lower()
+    # 1. Keep all sports
+    if any(sport in name_str for sport in SPORTS_KEYWORDS):
+        return True
+    # 2. Local DC/MD/VA
+    if any(local in name_str for local in LOCAL_KEYWORDS):
+        return True
+    # 3. East Coast premium/regular
+    if any(marker in name_str for marker in EAST_MARKERS):
+        if not any(marker in name_str for marker in WEST_MARKERS):
+            return True
+    return False
+
+# ============================
+# MERGE FEEDS
+# ============================
+all_channels = {}
+all_programmes = []
+programme_keys = set()
+
+for name, url in CORE_FEEDS.items():
+    try:
+        tree = fetch_xml(url)
+        print(f"Processing {name}")
+        for ch in tree.xpath("//channel"):
+            ch_id = ch.get("id")
+            display_names = ch.xpath("display-name/text()")
+            if not display_names:
+                continue
+            if keep_channel(display_names):
+                if ch_id not in all_channels:
+                    all_channels[ch_id] = ch
+        for prog in tree.xpath("//programme"):
+            ch_id = prog.get("channel")
+            if ch_id in all_channels:
+                key = (ch_id, prog.get("start"))
+                if key not in programme_keys:
+                    programme_keys.add(key)
+                    all_programmes.append(prog)
+    except Exception as e:
+        print(f"Failed {name}: {e}")
+
+# ============================
+# BUILD FINAL XML
+# ============================
+root = etree.Element("tv")
+for ch in all_channels.values():
+    root.append(ch)
+for prog in all_programmes:
+    root.append(prog)
+
+with gzip.open(merged_file, "wb", compresslevel=9) as f:
+    f.write(etree.tostring(root, xml_declaration=True, encoding="UTF-8"))
+
+# Write final status page
+with open(status_file, "w") as f:
+    f.write(f"<html><body><h1>EPG merge completed</h1>"
+            f"<p>Last updated: {datetime.now(UTC)} UTC</p>"
+            f"<p>Channels kept: {len(all_channels)}</p>"
+            f"<p>Programs kept: {len(all_programmes)}</p>"
+            f"</body></html>\n")
+
+print("Regional optimized merge complete.")
 
