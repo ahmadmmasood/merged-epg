@@ -1,81 +1,75 @@
 #!/usr/bin/env python3
-
 import gzip
-import requests
-import lxml.etree as ET
+from lxml import etree
 from datetime import datetime
 import pytz
-import os
 
-# --- CONFIG ---
-EPG_SOURCES = [
+# -----------------------------
+# CONFIG: Only keep local + important channels
+# -----------------------------
+LOCAL_CHANNELS = {
+    "HUT-TV", "WRC-TV", "WZDC-CD", "WTTG", "WHUT-TV", "WDCA",
+    "WDCN-LD", "WJLA-TV", "WJAL", "WUSA", "WDCO-CD", "WFDC-DT",
+    "WDCW", "WMPT", "WDDN-LD", "WDWA-LD", "WDVM-TV", "WETA-TV",
+    "WRZB-LD", "W13DW-D", "W10DE-D", "WWTD-LD", "WMDO-CD",
+    "WPXW-TV", "WIAV-CD", "WFPT"
+}
+
+INPUT_URLS = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-    "https://iptv-epg.org/files/epg-in.xml.gz",
-    "https://www.open-epg.com/files/india3.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz"
+    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 ]
 
-MERGED_FILE = "merged.xml.gz"
-INDEX_FILE = "index.html"
-CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+OUTPUT_XML = "merged.xml.gz"
+INDEX_HTML = "index.html"
 
-# --- FUNCTIONS ---
-def download_gz(url, local_path):
-    print(f"Downloading: {url}")
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    with open(local_path, "wb") as f:
-        total = 0
-        for chunk in response.iter_content(CHUNK_SIZE):
-            if chunk:
-                f.write(chunk)
-                total += len(chunk)
-        print(f"Downloaded {total / (1024*1024):.2f} MB")
-    return local_path
+# -----------------------------
+# Function to download and parse XML
+# -----------------------------
+import requests
+def download_xml(url):
+    print(f"Downloading {url} ...")
+    r = requests.get(url, timeout=None)  # no timeout
+    r.raise_for_status()
+    return etree.fromstring(r.content)
 
-def load_xml_from_gz(path):
-    with gzip.open(path, "rb") as f:
-        tree = ET.parse(f)
-    return tree
+# -----------------------------
+# Merge XMLs
+# -----------------------------
+merged = etree.Element("tv")
 
-def merge_tvsources(sources):
-    merged_root = ET.Element("tv")
-    channel_ids = set()
-    program_count = 0
+channels_kept = 0
+programs_kept = 0
 
-    for i, url in enumerate(sources):
-        temp_file = f"temp_{i}.xml.gz"
-        download_gz(url, temp_file)
-        tree = load_xml_from_gz(temp_file)
-        root = tree.getroot()
+for url in INPUT_URLS:
+    try:
+        root = download_xml(url)
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        continue
 
-        # Channels
-        for ch in root.findall("channel"):
-            ch_id = ch.get("id")
-            if ch_id not in channel_ids:
-                merged_root.append(ch)
-                channel_ids.add(ch_id)
+    for channel in root.findall("channel"):
+        if channel.get("id") not in LOCAL_CHANNELS:
+            continue
+        merged.append(channel)
+        channels_kept += 1
 
-        # Programs
-        for prog in root.findall("programme"):
-            merged_root.append(prog)
-            program_count += 1
+    for programme in root.findall("programme"):
+        if programme.get("channel") in LOCAL_CHANNELS:
+            merged.append(programme)
+            programs_kept += 1
 
-        os.remove(temp_file)
+# -----------------------------
+# Write gzipped XML
+# -----------------------------
+with gzip.open(OUTPUT_XML, "wb") as f:
+    f.write(etree.tostring(merged, encoding="UTF-8", xml_declaration=True))
 
-    return merged_root, len(channel_ids), program_count
-
-def save_merged_xml(root, path):
-    tree = ET.ElementTree(root)
-    with gzip.open(path, "wb") as f:
-        tree.write(f, xml_declaration=True, encoding="UTF-8")
-    print(f"Merged XML saved to {path}")
-
-def update_index_html(channels, programs, index_path):
-    local_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-    content = f"""
-<!DOCTYPE html>
+# -----------------------------
+# Update index.html with local time
+# -----------------------------
+local_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -84,18 +78,13 @@ def update_index_html(channels, programs, index_path):
 <body>
     <h1>EPG merge completed</h1>
     <p>Last updated: {local_time}</p>
-    <p>Channels kept: {channels}</p>
-    <p>Programs kept: {programs}</p>
+    <p>Channels kept: {channels_kept}</p>
+    <p>Programs kept: {programs_kept}</p>
 </body>
-</html>
-"""
-    with open(index_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print(f"Index updated at {index_path}")
+</html>"""
 
-# --- MAIN ---
-if __name__ == "__main__":
-    merged_root, channel_count, program_count = merge_tvsources(EPG_SOURCES)
-    save_merged_xml(merged_root, MERGED_FILE)
-    update_index_html(channel_count, program_count, INDEX_FILE)
+with open(INDEX_HTML, "w") as f:
+    f.write(html_content)
+
+print(f"EPG merge completed\nLast updated: {local_time}\nChannels kept: {channels_kept}\nPrograms kept: {programs_kept}")
 
