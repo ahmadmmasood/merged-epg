@@ -27,13 +27,11 @@ jobs:
           pip install lxml requests
 
       - name: Run EPG merge script
-        run: |
-          mkdir -p output
-          python merge_epg.py
+        run: python merge_epg.py
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./output
+          publish_dir: ./      # deploy root (matches our updated merge_epg.py)
 
