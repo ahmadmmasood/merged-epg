@@ -2,8 +2,8 @@ name: Merge EPG Daily
 
 on:
   schedule:
-    - cron: '0 5 * * *'  # daily at 05:00 UTC
-  workflow_dispatch:       # allows manual trigger
+    - cron: '0 5 * * *'
+  workflow_dispatch:
 
 jobs:
   merge-epg:
@@ -20,17 +20,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          echo "Upgrading pip and installing Python dependencies..."
           python -m pip install --upgrade pip
           pip install lxml requests
 
       - name: Run EPG merge script
         run: |
-          echo "Creating output folder..."
           mkdir -p output
-          echo "Running merge_epg.py..."
-          python merge_epg.py output/merged.xml.gz
-          echo "Script finished."
+          python merge_epg.py
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
