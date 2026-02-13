@@ -1,11 +1,15 @@
+#!/usr/bin/env python3
 import gzip
+import io
 import requests
 from lxml import etree
 from datetime import datetime
 import pytz
 
-# --- URLs to pull EPG from ---
-EPG_URLS = [
+# -------------------------
+# CONFIG
+# -------------------------
+SOURCES = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
     "https://iptv-epg.org/files/epg-in.xml.gz",
@@ -13,79 +17,80 @@ EPG_URLS = [
     "https://www.open-epg.com/files/unitedstates10.xml.gz"
 ]
 
-# --- Channels you want to keep (partial list shown, extend as needed) ---
-KEEP_CHANNELS = [
-    # Local DC/MD/VA
-    "WRC-DT", "WUSA-DT", "WJLA-DT", "WTTG-DT", "WDCA-DT", "WETA", "WMPT",
-    "WFDC-DT", "WDCW", "WZDC-CD", "WDVM-TV", "WJAL",
-    # Major US Cable/Streaming (East coast)
-    "A&E", "AMC", "AHC", "Animal Planet", "Baby TV US", "BBC America HD", "Boomerang",
-    "Bravo", "Cartoon Network", "CNBC", "CMT", "CNN", "CNN International", "CourtTV",
-    "Discovery Life", "Destination America", "Discovery Channel HD", "Discovery Family",
-    "Disney Channel", "Disney Junior", "Disney XD", "E!", "ESPN HD", "ESPN2 HD", "ESPNews",
-    "Fox Business", "FX HD", "Game Show Network", "Golf USA", "HBO", "HBO Max", "HBO Signature",
-    "History HD", "HLN HD", "ID", "IFC", "IndiePlex", "Love Nature",
-    "MBC1", "MBC Masr", "MBC Masr2", "Nogoum", "Balle Balle", "9X Jalwa", "MTV India",
-    "NBA", "NHL", "NFL", "Paramount Network", "Nick", "Showtime", "STARZ", "Syfy",
-    "TBS", "TNT", "TravelXP", "USA", "VHI", "TVLand", "TeleXitos",
-    # Add more as needed
-]
+MERGED_FILE = "merged.xml.gz"
+INDEX_FILE = "index.html"
+TIMEZONE = "America/New_York"
 
-# --- Function to fetch and parse XML.gz ---
-def fetch_epg(url):
+# -------------------------
+# FUNCTIONS
+# -------------------------
+def download_gz(url):
     print(f"Downloading {url} ...")
-    r = requests.get(url, stream=True)
-    r.raise_for_status()
-    with gzip.GzipFile(fileobj=r.raw) as f:
-        tree = etree.parse(f)
-    return tree
+    resp = requests.get(url, stream=True, timeout=None)
+    resp.raise_for_status()
+    return gzip.decompress(resp.content)
 
-# --- Merge all EPGs ---
-merged_channels = {}
-merged_programs = []
+def parse_xml(data):
+    return etree.fromstring(data)
 
-for url in EPG_URLS:
-    tree = fetch_epg(url)
-    root = tree.getroot()
-    for channel in root.findall("channel"):
-        ch_id = channel.get("id")
-        ch_name = channel.findtext("display-name") or ""
-        if any(k.lower() in ch_name.lower() or k.lower() in ch_id.lower() for k in KEEP_CHANNELS):
-            merged_channels[ch_id] = channel
-    for program in root.findall("programme"):
-        prog_ch = program.get("channel")
-        if prog_ch in merged_channels:
-            merged_programs.append(program)
+def merge_channels(root_elements):
+    merged_root = etree.Element("tv")
+    channels_seen = set()
+    programs_seen = set()
 
-# --- Create merged XML tree ---
-tv = etree.Element("tv")
-for ch in merged_channels.values():
-    tv.append(ch)
-for prog in merged_programs:
-    tv.append(prog)
+    total_programs = 0
+    for root in root_elements:
+        # Channels
+        for ch in root.findall("channel"):
+            ch_id = ch.get("id")
+            if ch_id not in channels_seen:
+                merged_root.append(ch)
+                channels_seen.add(ch_id)
 
-# --- Save merged XML.gz to root ---
-output_file = "merged.xml.gz"
-with gzip.open(output_file, "wb") as f:
-    f.write(etree.tostring(tv, xml_declaration=True, encoding="UTF-8", pretty_print=True))
+        # Programs
+        for prog in root.findall("programme"):
+            prog_key = (prog.get("channel"), prog.get("start"), prog.get("stop"))
+            if prog_key not in programs_seen:
+                merged_root.append(prog)
+                programs_seen.add(prog_key)
+                total_programs += 1
 
-# --- Generate index.html with local Eastern Time ---
-eastern = pytz.timezone("US/Eastern")
-now = datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
-index_html = f"""<html>
-<head><title>EPG Merge</title></head>
+    return merged_root, len(channels_seen), total_programs
+
+def write_gz(root, filename):
+    data = etree.tostring(root, pretty_print=True, encoding="UTF-8", xml_declaration=True)
+    with gzip.open(filename, "wb") as f:
+        f.write(data)
+
+def update_index(channels_count, programs_count):
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    html = f"""<html>
+<head><title>EPG Merge Status</title></head>
 <body>
-<h1>EPG Merge Completed</h1>
+<h2>EPG merge completed</h2>
 <p>Last updated: {now}</p>
-<p>Channels kept: {len(merged_channels)}</p>
-<p>Programs kept: {len(merged_programs)}</p>
+<p>Channels kept: {channels_count}</p>
+<p>Programs kept: {programs_count}</p>
 </body>
-</html>
-"""
+</html>"""
+    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
 
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(index_html)
+# -------------------------
+# MAIN
+# -------------------------
+if __name__ == "__main__":
+    xml_roots = []
+    for src in SOURCES:
+        try:
+            data = download_gz(src)
+            xml_roots.append(parse_xml(data))
+        except Exception as e:
+            print(f"Error downloading or parsing {src}: {e}")
 
-print(f"EPG merge completed. Channels kept: {len(merged_channels)}, Programs kept: {len(merged_programs)}")
-print(f"Last updated: {now}")
+    merged_root, ch_count, prog_count = merge_channels(xml_roots)
+    write_gz(merged_root, MERGED_FILE)
+    update_index(ch_count, prog_count)
+    print(f"Merge finished: {ch_count} channels, {prog_count} programs")
 
