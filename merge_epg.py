@@ -16,7 +16,30 @@ EPG_SOURCES = [
     "https://www.open-epg.com/files/unitedstates10.xml.gz"
 ]
 
-DAYS_TO_KEEP = 5
+# Keep channels based on your DC-area list and East Coast networks
+KEEP_CHANNELS = [
+    # Local DC area channels
+    "WRC-TV", "WZDC-CD", "WTTG", "WDCA", "WJLA-TV", "WHUT-TV", 
+    "WUSA", "WJAL", "WFDC-DT", "WDCW", "WMPT", "WETA-TV",
+    "WDCW", "WMDO-CD", "WJLA", "WETA", "WDVM-TV", "WPXW-TV", "WJAL", "WHUT",
+    # East Coast News
+    "CNN", "Fox News", "MSNBC", "Fox Business", "Newsmax",
+    # East Coast Sports
+    "ESPN", "Fox Sports 1", "MASN", "Big Ten Network", "ACC Network", "Golf Channel",
+    # Premium Networks (HBO, Showtime, Cinemax, etc.)
+    "HBO", "SHOWTIME", "STARZ", "Cinemax", "MGM+", "Paramount+", "ESPN", "TNT",
+    # Entertainment/Lifestyle (USA, FX, AMC, Bravo, HGTV, etc.)
+    "USA", "FX", "TBS", "AMC", "Bravo", "HGTV", "Food Network", "Comedy Central",
+    "Lifetime", "Discovery", "A&E", "TLC", "History", "Syfy", "Travel Channel", "E!", "TV Land",
+    "Nickelodeon", "Disney", "Hallmark", "Nick Jr.", "Universal Kids", "Freeform",
+    # Local Network Channels
+    "WETA", "NBC", "CBS", "ABC", "FOX", "PBS", "My20", "COZI TV", "MeTV", "ION",
+    "Quest", "TBD", "Comet", "BUZZR", "Start TV", "True Crime Network", "Grit",
+    # Local Education & Public Access
+    "PBS", "Create", "MPT", "C-SPAN"
+]
+
+DAYS_TO_KEEP = 3
 
 OUTPUT_XML = "merged.xml.gz"
 OUTPUT_HTML = "index.html"
@@ -41,10 +64,10 @@ for url in EPG_SOURCES:
         tree = etree.parse(f)
         root = tree.getroot()
 
-        # Add ALL channels (no filter)
+        # Add the channels to merged EPG
         for ch in root.findall("channel"):
             ch_id = ch.get("id")
-            if ch_id and ch_id not in channels_added:
+            if ch_id and ch_id in KEEP_CHANNELS and ch_id not in channels_added:
                 merged_root.append(ch)
                 channels_added.add(ch_id)
 
@@ -101,7 +124,7 @@ html_content = f"""
 with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("EPG merge completed")
+print(f"EPG merge completed")
 print(f"Channels kept: {len(channels_added)}")
 print(f"Programs kept: {programs_kept}")
 print(f"Final merged XML file size: {file_size_mb:.2f} MB")
