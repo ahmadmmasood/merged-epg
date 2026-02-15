@@ -15,9 +15,13 @@ EPG_SOURCES = [
     "https://www.open-epg.com/files/unitedstates10.xml.gz"
 ]
 
-# Keep channels that contain 'east' (case insensitive) but exclude any with 'west' in the name
-def is_east_coast_channel(channel_name):
-    return 'east' in channel_name.lower() and 'west' not in channel_name.lower()
+# Keep channels that contain 'east' (case insensitive), but also add local channels explicitly
+def is_east_coast_or_local_channel(channel_name, channel_id):
+    # Check if the channel is East Coast based and if it's a local Washington, D.C. station
+    east_coast_criteria = 'east' in channel_name.lower() and 'west' not in channel_name.lower()
+    local_criteria = any(local_id in channel_id for local_id in ["WRC", "WTTG", "WJLA", "WHUT", "WUSA", "WDCA", "WDCW", "WJAL"])
+
+    return east_coast_criteria or local_criteria
 
 # -----------------------
 # DOWNLOAD AND MERGE
@@ -42,7 +46,8 @@ for url in EPG_SOURCES:
             ch_id = ch.get("id")
             ch_name = ch.find("display-name").text if ch.find("display-name") is not None else ""
             
-            if is_east_coast_channel(ch_name) and ch_id not in channels_added:
+            # Apply both East Coast and Local criteria
+            if is_east_coast_or_local_channel(ch_name, ch_id) and ch_id not in channels_added:
                 merged_root.append(ch)
                 channels_added.add(ch_id)
                 channels_merged.append(ch_name)
