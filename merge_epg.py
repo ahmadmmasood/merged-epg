@@ -12,16 +12,37 @@ import os
 EPG_SOURCES = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz"
+    "https://www.open-epg.com/files/unitedstates10.xml.gz",
+    "https://iptv-epg.org/files/epg-in.xml.gz",
+    "https://www.open-epg.com/files/india3.xml.gz",
+    "https://iptv-epg.org/files/epg-eg.xml.gz",
+    "https://iptv-epg.org/files/epg-lb.xml.gz"
 ]
 
-# Keep channels that contain 'east' (case insensitive), but also add local channels explicitly
-def is_east_coast_or_local_channel(channel_name, channel_id):
-    # Check if the channel is East Coast based and if it's a local Washington, D.C. station
-    east_coast_criteria = 'east' in channel_name.lower() and 'west' not in channel_name.lower()
-    local_criteria = any(local_id in channel_id for local_id in ["WRC", "WTTG", "WJLA", "WHUT", "WUSA", "WDCA", "WDCW", "WJAL"])
+# Channels to always include by partial match (case insensitive)
+INTERNATIONAL_CHANNEL_KEYS = [
+    "balle", "b4u", "9x jalwa", "mtv india", "travel xp",
+    "aghani", "nogoum", "mbc masr", "mbc1"
+]
 
-    return east_coast_criteria or local_criteria
+LOCAL_CHANNEL_IDS = [
+    "WRC", "WTTG", "WJLA", "WHUT", "WUSA", "WDCA", "WDCW", "WJAL",
+    "WETA", "WPXW", "WDVM", "WMPT"
+]
+
+def is_east_coast_or_local_or_international(channel_name, channel_id):
+    name_lower = channel_name.lower()
+
+    # East Coast criteria
+    east_coast = 'east' in name_lower and 'west' not in name_lower
+
+    # Local broadcast stations
+    local = any(local_id.lower() in channel_id.lower() for local_id in LOCAL_CHANNEL_IDS)
+
+    # International channels by partial name match
+    international = any(key in name_lower for key in INTERNATIONAL_CHANNEL_KEYS)
+
+    return east_coast or local or international
 
 # -----------------------
 # DOWNLOAD AND MERGE
@@ -44,22 +65,22 @@ for url in EPG_SOURCES:
         # Channels
         for ch in root.findall("channel"):
             ch_id = ch.get("id")
-            ch_name = ch.find("display-name").text if ch.find("display-name") is not None else ""
-            
-            # Apply both East Coast and Local criteria
-            if is_east_coast_or_local_channel(ch_name, ch_id) and ch_id not in channels_added:
+            display_names = [d.text for d in ch.findall("display-name") if d.text]
+            ch_name = display_names[0] if display_names else ""
+
+            if is_east_coast_or_local_or_international(ch_name, ch_id) and ch_id not in channels_added:
                 merged_root.append(ch)
                 channels_added.add(ch_id)
                 channels_merged.append(ch_name)
-        
+
         # Programs
         cutoff = datetime.now(pytz.utc) - timedelta(days=3)
         for prog in root.findall("programme"):
             ch_id = prog.get("channel")
-            start_str = prog.get("start")
             if not ch_id or ch_id not in channels_added:
                 continue
-
+            
+            start_str = prog.get("start")
             try:
                 start_time = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
                 start_time = pytz.utc.localize(start_time)
@@ -77,21 +98,17 @@ tree = etree.ElementTree(merged_root)
 with gzip.open("merged.xml.gz", "wb") as f:
     tree.write(f, encoding="UTF-8", xml_declaration=True)
 
-# Get actual merged file size
 file_size_mb = round(os.path.getsize("merged.xml.gz") / (1024 * 1024), 2)
 
 # -----------------------
-# WRITE INDEX.HTML
+# WRITE STATUS HTML
 # -----------------------
 now_local = datetime.now(pytz.timezone("America/New_York")).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 html_content = f"""
 <!DOCTYPE html>
 <html>
-<head>
-<title>EPG Merge Status</title>
-<meta charset="UTF-8">
-</head>
+<head><title>EPG Merge Status</title><meta charset="UTF-8"></head>
 <body>
 <h1>EPG Merge Status</h1>
 <p><strong>Last updated:</strong> {now_local}</p>
@@ -106,18 +123,13 @@ html_content = f"""
 for ch in sorted(channels_merged):
     html_content += f"<li>{ch}</li>\n"
 
-html_content += """
-</ul>
-</body>
-</html>
-"""
+html_content += "</ul></body></html>"
 
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
 print("EPG merge completed")
-print(f"Last updated: {now_local}")
 print(f"Channels kept: {len(channels_added)}")
 print(f"Programs kept: {programs_kept}")
-print(f"Channels merged: {len(channels_merged)}")
+print(f"File size: {file_size_mb} MB")
 
