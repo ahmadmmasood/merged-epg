@@ -4,6 +4,7 @@ import io
 from lxml import etree
 from datetime import datetime, timedelta
 import pytz
+import os
 
 # -----------------------
 # CONFIG
@@ -24,6 +25,7 @@ def is_east_coast_channel(channel_name):
 merged_root = etree.Element("tv")
 
 channels_added = set()
+channels_merged = []
 programs_kept = 0
 
 for url in EPG_SOURCES:
@@ -43,20 +45,22 @@ for url in EPG_SOURCES:
             if is_east_coast_channel(ch_name) and ch_id not in channels_added:
                 merged_root.append(ch)
                 channels_added.add(ch_id)
+                channels_merged.append(ch_name)
         
         # Programs
-        cutoff = datetime.now(pytz.utc) - timedelta(days=3)  # Keep programs only from the last 3 days
+        cutoff = datetime.now(pytz.utc) - timedelta(days=3)
         for prog in root.findall("programme"):
             ch_id = prog.get("channel")
-            start_str = prog.get("start")  # e.g., '20260213200000 +0000'
+            start_str = prog.get("start")
             if not ch_id or ch_id not in channels_added:
                 continue
-            # Parse start time
+
             try:
                 start_time = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
                 start_time = pytz.utc.localize(start_time)
             except Exception:
                 continue
+
             if start_time >= cutoff:
                 merged_root.append(prog)
                 programs_kept += 1
@@ -67,6 +71,9 @@ for url in EPG_SOURCES:
 tree = etree.ElementTree(merged_root)
 with gzip.open("merged.xml.gz", "wb") as f:
     tree.write(f, encoding="UTF-8", xml_declaration=True)
+
+# Get actual merged file size
+file_size_mb = round(os.path.getsize("merged.xml.gz") / (1024 * 1024), 2)
 
 # -----------------------
 # WRITE INDEX.HTML
@@ -85,7 +92,17 @@ html_content = f"""
 <p><strong>Last updated:</strong> {now_local}</p>
 <p><strong>Channels kept:</strong> {len(channels_added)}</p>
 <p><strong>Programs kept:</strong> {programs_kept}</p>
-<p><strong>Final merged file size:</strong> {round(len(r.content) / (1024 * 1024), 2)} MB</p>
+<p><strong>Final merged file size:</strong> {file_size_mb} MB</p>
+
+<h2>Channels Merged:</h2>
+<ul>
+"""
+
+for ch in sorted(channels_merged):
+    html_content += f"<li>{ch}</li>\n"
+
+html_content += """
+</ul>
 </body>
 </html>
 """
@@ -93,8 +110,9 @@ html_content = f"""
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print(f"EPG merge completed")
+print("EPG merge completed")
 print(f"Last updated: {now_local}")
 print(f"Channels kept: {len(channels_added)}")
 print(f"Programs kept: {programs_kept}")
+print(f"Channels merged: {len(channels_merged)}")
 
