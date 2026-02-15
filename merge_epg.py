@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
 import requests
 import gzip
 import io
 from lxml import etree
 from datetime import datetime, timedelta
 import pytz
-import os
 
 # -----------------------
 # CONFIG
@@ -16,75 +14,49 @@ EPG_SOURCES = [
     "https://www.open-epg.com/files/unitedstates10.xml.gz"
 ]
 
-# Keep channels based on your DC-area list and East Coast networks
-KEEP_CHANNELS = [
-    # Local DC area channels
-    "WRC-TV", "WZDC-CD", "WTTG", "WDCA", "WJLA-TV", "WHUT-TV", 
-    "WUSA", "WJAL", "WFDC-DT", "WDCW", "WMPT", "WETA-TV",
-    "WDCW", "WMDO-CD", "WJLA", "WETA", "WDVM-TV", "WPXW-TV", "WJAL", "WHUT",
-    # East Coast News
-    "CNN", "Fox News", "MSNBC", "Fox Business", "Newsmax",
-    # East Coast Sports
-    "ESPN", "Fox Sports 1", "MASN", "Big Ten Network", "ACC Network", "Golf Channel",
-    # Premium Networks (HBO, Showtime, Cinemax, etc.)
-    "HBO", "SHOWTIME", "STARZ", "Cinemax", "MGM+", "Paramount+", "ESPN", "TNT",
-    # Entertainment/Lifestyle (USA, FX, AMC, Bravo, HGTV, etc.)
-    "USA", "FX", "TBS", "AMC", "Bravo", "HGTV", "Food Network", "Comedy Central",
-    "Lifetime", "Discovery", "A&E", "TLC", "History", "Syfy", "Travel Channel", "E!", "TV Land",
-    "Nickelodeon", "Disney", "Hallmark", "Nick Jr.", "Universal Kids", "Freeform",
-    # Local Network Channels
-    "WETA", "NBC", "CBS", "ABC", "FOX", "PBS", "My20", "COZI TV", "MeTV", "ION",
-    "Quest", "TBD", "Comet", "BUZZR", "Start TV", "True Crime Network", "Grit",
-    # Local Education & Public Access
-    "PBS", "Create", "MPT", "C-SPAN"
-]
-
-DAYS_TO_KEEP = 3
-
-OUTPUT_XML = "merged.xml.gz"
-OUTPUT_HTML = "index.html"
-
-LOCAL_TZ = pytz.timezone("America/New_York")
+# Keep channels that contain 'east' (case insensitive) but exclude any with 'west' in the name
+def is_east_coast_channel(channel_name):
+    return 'east' in channel_name.lower() and 'west' not in channel_name.lower()
 
 # -----------------------
 # DOWNLOAD AND MERGE
 # -----------------------
 merged_root = etree.Element("tv")
+
 channels_added = set()
 programs_kept = 0
 
-cutoff = datetime.now(pytz.utc) - timedelta(days=DAYS_TO_KEEP)
-
 for url in EPG_SOURCES:
     print(f"Downloading {url} ...")
-    r = requests.get(url, timeout=60)
+    r = requests.get(url, timeout=None)
     r.raise_for_status()
-
+    
     with gzip.open(io.BytesIO(r.content), "rb") as f:
         tree = etree.parse(f)
         root = tree.getroot()
-
-        # Add the channels to merged EPG
+        
+        # Channels
         for ch in root.findall("channel"):
             ch_id = ch.get("id")
-            if ch_id and ch_id in KEEP_CHANNELS and ch_id not in channels_added:
+            ch_name = ch.find("display-name").text if ch.find("display-name") is not None else ""
+            
+            if is_east_coast_channel(ch_name) and ch_id not in channels_added:
                 merged_root.append(ch)
                 channels_added.add(ch_id)
-
-        # Add programs within last X days
+        
+        # Programs
+        cutoff = datetime.now(pytz.utc) - timedelta(days=3)  # Keep programs only from the last 3 days
         for prog in root.findall("programme"):
             ch_id = prog.get("channel")
-            start_str = prog.get("start")
-
+            start_str = prog.get("start")  # e.g., '20260213200000 +0000'
             if not ch_id or ch_id not in channels_added:
                 continue
-
+            # Parse start time
             try:
                 start_time = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
                 start_time = pytz.utc.localize(start_time)
             except Exception:
                 continue
-
             if start_time >= cutoff:
                 merged_root.append(prog)
                 programs_kept += 1
@@ -93,16 +65,13 @@ for url in EPG_SOURCES:
 # WRITE XML.GZ
 # -----------------------
 tree = etree.ElementTree(merged_root)
-with gzip.open(OUTPUT_XML, "wb") as f:
+with gzip.open("merged.xml.gz", "wb") as f:
     tree.write(f, encoding="UTF-8", xml_declaration=True)
-
-file_size = os.path.getsize(OUTPUT_XML)
-file_size_mb = file_size / (1024 * 1024)
 
 # -----------------------
 # WRITE INDEX.HTML
 # -----------------------
-now_local = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
+now_local = datetime.now(pytz.timezone("America/New_York")).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 html_content = f"""
 <!DOCTYPE html>
@@ -116,16 +85,16 @@ html_content = f"""
 <p><strong>Last updated:</strong> {now_local}</p>
 <p><strong>Channels kept:</strong> {len(channels_added)}</p>
 <p><strong>Programs kept:</strong> {programs_kept}</p>
-<p><strong>Final merged file size:</strong> {file_size_mb:.2f} MB</p>
+<p><strong>Final merged file size:</strong> {round(len(r.content) / (1024 * 1024), 2)} MB</p>
 </body>
 </html>
 """
 
-with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
+with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
 print(f"EPG merge completed")
+print(f"Last updated: {now_local}")
 print(f"Channels kept: {len(channels_added)}")
 print(f"Programs kept: {programs_kept}")
-print(f"Final merged XML file size: {file_size_mb:.2f} MB")
 
