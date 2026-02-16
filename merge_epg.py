@@ -2,8 +2,11 @@ import os
 import re
 import xml.etree.ElementTree as ET
 import requests
+import gzip
+from io import BytesIO
 from datetime import datetime
 import pytz
+
 
 # Load master channel list (adjust this to your file location)
 def load_master_channels(file_path):
@@ -64,7 +67,14 @@ def fetch_xml_data(url):
     try:
         response = requests.get(url)
         response.raise_for_status()
-        content = response.content
+        
+        # If the content is gzipped, handle it properly
+        if url.endswith('.gz'):
+            with gzip.GzipFile(fileobj=BytesIO(response.content)) as f:
+                content = f.read().decode('utf-8')
+        else:
+            content = response.text
+
         return parse_xml_data(content)
     except Exception as e:
         print(f"Error fetching/parsing XML file: {e}")
@@ -122,7 +132,7 @@ def update_index_page(channels_count, programs_count, file_size, log_data, found
     <button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
     <button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
     <div id="analysis" style="display:none;">
-        <p><strong>Total Channels in Master List:</strong> 229</p>
+        <p><strong>Total Channels in Master List:</strong> {len(master_channels)}</p>
         <p><strong>Channels Found:</strong> {channels_count}</p>
         <p><strong>Channels Not Found:</strong> {len(not_found_channels)}</p>
 
@@ -145,6 +155,25 @@ def update_index_page(channels_count, programs_count, file_size, log_data, found
     with open("index.html", "w") as file:
         file.write(html_content)
     print("index.html has been updated.")
+
+
+# Save merged EPG data to a file (this would be where you save the merged XML or TXT)
+def save_merged_data(merged_data, filename):
+    try:
+        with gzip.GzipFile(filename, 'w') as f:
+            f.write(merged_data.encode('utf-8'))
+        print(f"File saved as {filename}")
+    except Exception as e:
+        print(f"Error saving merged data: {e}")
+
+
+# Calculate the final file size of the merged file
+def get_file_size(filename):
+    try:
+        return os.path.getsize(filename) / (1024 * 1024)  # Size in MB
+    except Exception as e:
+        print(f"Error getting file size: {e}")
+        return 0
 
 
 # Main function
@@ -175,17 +204,21 @@ def main():
         total_channels.extend(channels)
 
     # Identify channels found and not found
-    for channel in total_channels:
-        if channel in master_channels:  # Compare with the master list
-            found_channels.append(channel)
-        else:
-            not_found_channels.append(channel)
+    found_channels = [channel for channel in total_channels if channel in master_channels]
+    not_found_channels = [channel for channel in master_channels if channel not in total_channels]
+
+    # Save the merged data (example: save it as merged_epg.xml.gz)
+    merged_data = "Merged EPG data here..."  # This would be your merged data as a string
+    save_merged_data(merged_data, "merged_epg.xml.gz")
+
+    # Get the final merged file size
+    file_size = get_file_size("merged_epg.xml.gz")
 
     # Prepare index page content
     update_index_page(
         channels_count=len(found_channels),
         programs_count=0,  # Add your logic to count programs
-        file_size=37.00,  # Calculate actual size if necessary
+        file_size=file_size,  # Actual file size of the merged file
         log_data="\n".join(log_data),
         found_channels=found_channels,
         not_found_channels=not_found_channels
