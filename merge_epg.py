@@ -77,7 +77,7 @@ for url in sources:
         if root is None:
             continue
         channels = [ch.find('display-name').text.strip() for ch in root.findall('channel')]
-    
+
     # Process channels
     for channel_name in channels:
         if channel_name:
@@ -89,7 +89,7 @@ for url in sources:
             if channel_name not in all_channels:
                 all_channels[channel_name] = channel_name  # Use name as unique identifier
 
-    # Process programs (only if root is defined)
+    # Process programs (only if root is defined and XML file is being processed)
     if root:
         for pr in root.findall('programme'):
             pr_title_el = pr.find('title')
