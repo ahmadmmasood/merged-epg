@@ -11,18 +11,37 @@ from xml.etree import ElementTree as ET
 def normalize_channel_name(name):
     if not name:
         return None
-    # Lowercase
     name = name.lower()
-    # Remove suffixes like .us2, .locals1
-    name = name.replace(".us2", "").replace(".locals1", "")
-    # Replace "." with spaces
+    # Remove suffixes like .us_locals1, .us2, etc.
+    for suffix in [".us_locals1", ".us2"]:
+        name = name.replace(suffix, "")
+    # Replace dots with spaces
     name = name.replace(".", " ")
-    # Remove HD/HDTV, Pacific/West
-    for token in ["hd", "hdtv", "pacific", "west"]:
+    # Remove -dt, HD/HDTV, Pacific/West
+    for token in ["-dt", "hd", "hdtv", "pacific", "west"]:
         name = name.replace(token, "")
-    # Strip extra whitespace
+    # Trim spaces
     name = " ".join(name.split())
-    return name
+
+    # Map known local variations to master list
+    local_map = {
+        "wrc": "wrc-hd", "cozi": "cozi tv", "crimes": "crimes", "oxygen": "oxygen",
+        "wttg": "wttg-dt", "buzzr": "buzzr", "start": "start tv", "wjla": "wjla",
+        "charge": "charge!", "comet": "comet", "roar": "roar", "wusa": "wusa-hd",
+        "crime": "crime tv", "quest": "quest", "the nest": "the nest", "qvc": "qvc",
+        "wbal": "wbal-dt", "metv": "metv", "story television": "story television",
+        "gettv": "gettv", "wfdc": "wfdc-dt", "grit": "grit", "unimas": "unimas",
+        "wdca": "wdca", "movies": "movies!", "heroes & icons": "heroes & icons",
+        "fox weather": "fox weather", "mpt": "mpt-hd", "mpt-2": "mpt-2",
+        "mpt kids": "mpt kids", "nhk world japan": "nhk world japan", "wdvm": "wdvm-sd",
+        "weta": "weta-hd", "weta uk": "weta uk", "weta kids": "weta kids",
+        "world channel": "world channel", "metro": "metro", "whut": "whut",
+        "pbs kids": "pbs kids", "wzdc": "wzdc", "xitos": "xitos", "wdcw": "wdcw-dt",
+        "antenna": "antenna tv", "cwwnuv": "cwwnuv", "bounce": "bounce",
+        "court tv": "court tv", "laff": "laff", "busted": "busted",
+        "hsn": "hsn", "altavsn": "altavsn", "defy": "defy"
+    }
+    return local_map.get(name, name)
 
 # -----------------------------
 # FETCH AND PARSE EPG
@@ -67,7 +86,6 @@ def load_master_channels(file_path):
 # -----------------------------
 def update_index_page(master_channels, found_channels):
     not_found_channels = [c for c in master_channels if c not in found_channels]
-
     merged_file_size = os.path.getsize("merged_epg.xml.gz") / (1024*1024) if os.path.exists("merged_epg.xml.gz") else 0
 
     eastern = pytz.timezone('US/Eastern')
@@ -79,8 +97,8 @@ def update_index_page(master_channels, found_channels):
     <title>EPG Merge Status</title>
     <style>
         body {{ font-family: Arial, sans-serif; background-color: #fafafa; margin: 20px; }}
-        table {{ border-collapse: collapse; width: 50%; margin-bottom: 20px; }}
-        th, td {{ border: 1px solid #ccc; padding: 8px 12px; text-align: left; }}
+        table {{ border-collapse: collapse; width: 100%; max-width: 700px; margin-bottom: 20px; font-size: 14px; }}
+        th, td {{ border: 1px solid #ccc; padding: 6px 8px; text-align: left; }}
         th {{ background-color: #f2f2f2; }}
         tr.found {{ background-color: #d4edda; }}
         tr.notfound {{ background-color: #f8d7da; }}
@@ -130,13 +148,12 @@ def main():
             if c in master_channels:
                 found_channels_set.add(c)
 
-    # Here you would merge the actual XMLs and create 'merged_epg.xml.gz'
-    # (This part is unchanged from your existing code)
-    # Example placeholder:
+    # Create merged XML file placeholder if not exists
     if not os.path.exists("merged_epg.xml.gz"):
         with gzip.open("merged_epg.xml.gz", "wb") as f:
-            f.write(b"<epg></epg>")  # Replace with actual merged content
+            f.write(b"<epg></epg>")  # Replace with actual merged XML content
 
+    # Update index.html with counts and final file size
     update_index_page(master_channels, list(found_channels_set))
 
 if __name__ == "__main__":

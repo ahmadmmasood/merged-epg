@@ -1,57 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <title>EPG Merge Status</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #fafafa;
-            margin: 20px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 50%;
-            margin-bottom: 20px;
-        }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px 12px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr.found {
-            background-color: #d4edda;
-        }
-        tr.notfound {
-            background-color: #f8d7da;
-        }
-        h1, h2 {
-            color: #333;
-        }
+        body { font-family: Arial, sans-serif; background-color: #fafafa; margin: 20px; }
+        h1 { color: #333; }
+        table { border-collapse: collapse; width: 100%; max-width: 700px; margin-bottom: 20px; font-size: 14px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr.found { background-color: #d4edda; }
+        tr.notfound { background-color: #f8d7da; }
+        .summary { margin-bottom: 20px; }
     </style>
 </head>
 <body>
-    <h1>EPG Merge Status</h1>
-    <p><strong>Last updated:</strong> 1970-01-01 00:00:00</p>
+
+<h1>EPG Merge Status</h1>
+
+<div class="summary">
+    <p><strong>Last updated:</strong> --</p>
     <p><strong>Total channels in master list:</strong> 0</p>
     <p><strong>Channels found:</strong> 0</p>
     <p><strong>Channels not found:</strong> 0</p>
     <p><strong>Final merged file size:</strong> 0.00 MB</p>
+</div>
 
-    <h2>Channels Found</h2>
-    <table>
-        <tr><th>Channel Name</th></tr>
-        <!-- Found channels will be dynamically added here -->
-    </table>
+<h2>Channels Found</h2>
+<table>
+    <tr><th>Channel Name</th></tr>
+    <!-- Dynamically filled after merge_epg.py runs -->
+</table>
 
-    <h2>Channels Not Found</h2>
-    <table>
-        <tr><th>Channel Name</th></tr>
-        <!-- Not found channels will be dynamically added here -->
-    </table>
+<h2>Channels Not Found</h2>
+<table>
+    <tr><th>Channel Name</th></tr>
+    <!-- Dynamically filled after merge_epg.py runs -->
+</table>
+
 </body>
 </html>
 
