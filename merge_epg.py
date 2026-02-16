@@ -14,7 +14,7 @@ def load_master_channels(file_path):
 
 # Normalize the channel name
 def normalize_channel_name(channel_name):
-    # Remove suffixes like .us2, .hd, .us_locals1
+    # Remove suffixes like .us2, .hd, .hdtv, .us_locals1, .pacific, .west, .east
     suffixes = ['.us2', '.hd', '.hdtv', '.us_locals1', '.pacific', '.west', '.east']
     for suffix in suffixes:
         if channel_name.endswith(suffix):
@@ -30,14 +30,21 @@ def normalize_channel_name(channel_name):
     # Keep numbers in case of channels like 'HBO 2'
     return channel_name
 
-# Function to parse XML files
+# Function to parse XML files and extract channel names
 def parse_xml(epg_content):
     try:
         tree = ET.ElementTree(ET.fromstring(epg_content))
         root = tree.getroot()
-        return [channel.find("display-name").text for channel in root.findall("channel")]
-    except ET.ParseError:
-        print(f"Error parsing XML content.")
+
+        # Get all channels
+        channels = []
+        for channel in root.findall("channel"):
+            display_name = channel.find("display-name")
+            if display_name is not None:
+                channels.append(display_name.text.strip())
+        return channels
+    except ET.ParseError as e:
+        print(f"Error parsing XML content: {e}")
         return []
 
 # Function to fetch and parse EPG content from a URL
@@ -141,9 +148,9 @@ def main():
                 # Normalize the channel name here
                 normalized_channel = normalize_channel_name(channel)
                 
-                if normalized_channel in master_channels:
+                if normalized_channel and normalized_channel in master_channels:
                     found_channels.append(normalized_channel)
-                else:
+                elif normalized_channel:
                     not_found_channels.append(normalized_channel)
 
         log_data.append(f"Processed {url} - Found {len(epg_content)} channels")
