@@ -74,9 +74,11 @@ for url in sources:
     channels = fetch_txt_channels(url)
     
     # If txt fetch fails, try fetching XML
+    root = None
     if not channels:
         root = fetch_xml_channels(url)
         if root is None:
+            log_messages.append(f"Skipping {url} as XML parsing failed.")
             continue  # Skip to next URL if XML parsing fails
 
         channels = [ch.find('display-name').text.strip() for ch in root.findall('channel')]
