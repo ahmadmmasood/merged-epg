@@ -15,9 +15,11 @@ def load_master_list():
 
 # Normalize the channel names by removing common suffixes and making them case-insensitive
 def normalize_channel_name(channel_name):
-    # Remove common suffixes like .us2, .us_locals1, .hd, etc.
-    normalized_name = re.sub(r"(\.us2|\.us_locals1|\.hd|\.(?!.*[a-z])|[-_])", "", channel_name)
-    return normalized_name.strip().lower()
+    # Remove any dots and common suffixes like .us2, .us_locals1, .hd, etc.
+    normalized_name = re.sub(r"(\.us2|\.us_locals1|\.hd|\.in|\.tv|\.[a-zA-Z]{2}$|[-_])", " ", channel_name)
+    normalized_name = re.sub(r"\s+", " ", normalized_name)  # Replace multiple spaces with a single space
+    normalized_name = normalized_name.strip().lower()  # Convert to lowercase and remove leading/trailing spaces
+    return normalized_name
 
 # Fetch and parse the EPG data from the given URL
 def fetch_and_parse_epg(url):
@@ -158,6 +160,8 @@ def main():
     found_channels = 0
     found_programs = 0
     total_logs = []
+    found_channels_list = []
+    not_found_channels_list = []
 
     for url in epg_sources:
         epg_content, file_type, url = fetch_and_parse_epg(url)
@@ -170,24 +174,33 @@ def main():
 
             # Update count of found channels
             found_channels += len(found)
+            found_channels_list.extend(found)
+            not_found_channels_list.extend([channel for channel in master_channels if channel not in found])
+
             total_logs.append(f"<tr><td>{url}</td><td>{file_type.upper()}</td><td>Success</td><td>Found {len(found)} channels</td></tr>")
             
             # To calculate programs found, extend this part
             found_programs += len(found)  # Placeholder; replace with actual program extraction if needed
 
         else:
-            total_logs.append(f"<tr><td>{url}</td><td>Unknown</td><td>Error</td><td>Failed to fetch or parse</td></tr>")
-    
-    # Generate channel analysis text
+            total_logs.append(f"<tr><td>{url}</td><td>{file_type.upper()}</td><td>Error</td><td>Failed to fetch</td></tr>")
+
+    # Prepare analysis data
     analysis_data = f"""
-    Total Channels in Master List: {total_channels}
-    Channels Found: {found_channels}
-    Channels Not Found: {total_channels - found_channels}
+        Total Channels in Master List: {total_channels}
+        Channels Found: {found_channels}
+        Channels Not Found: {len(not_found_channels_list)}
+        Channels Found: {', '.join(found_channels_list[:10])}... (and more)
+        Channels Not Found: {', '.join(not_found_channels_list[:10])}... (and more)
     """
 
+    # Calculate merged file size
+    merged_file_size = 37.00  # Placeholder for actual file size, replace with your calculation if possible.
+    
     # Update the index page with the results
-    update_index_page(found_channels, found_programs, 37.00, '\n'.join(total_logs), analysis_data)
+    update_index_page(found_channels, found_programs, merged_file_size, ''.join(total_logs), analysis_data)
 
+# Call the main function to run the script
 if __name__ == "__main__":
     main()
 
