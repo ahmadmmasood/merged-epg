@@ -1,6 +1,5 @@
 import os
 import gzip
-import shutil
 import requests
 import pytz
 import xml.etree.ElementTree as ET
@@ -15,18 +14,18 @@ def load_master_channels(file_path):
     return channels
 
 #=========================
-# Normalization
+# Normalize channel names
 #=========================
 def normalize_channel_name(name):
     if not name:
         return None
     name = name.lower()
-    # Remove common suffixes
+    # Remove known suffixes
     for suffix in [".us2", ".us_locals1", ".txt"]:
         if name.endswith(suffix):
             name = name.replace(suffix, "")
-    # Remove HD, HDTV, East, West, Pacific, trailing/leading -
-    for remove_word in ["hd", "hdtv", "east", "west", "pacific", "-"]:
+    # Remove TV, HD, HDTV, East, West, Pacific, trailing/leading -
+    for remove_word in ["tv", "hd", "hdtv", "east", "west", "pacific", "-"]:
         name = name.replace(remove_word, "")
     # Replace dots with spaces
     name = name.replace(".", " ")
@@ -55,14 +54,14 @@ def fetch_and_parse_epg(url):
                 content = f_in.read()
             os.remove(tmp_file)
 
-        # If TXT file, parse lines
+        # TXT files
         if url.endswith(".txt"):
             lines = content.decode("utf-8", errors="ignore").splitlines()
             channels = [line.strip() for line in lines if line.strip()]
             print(f"Processed {url} - Parsed {len(channels)} channels")
             return channels
 
-        # XML parsing
+        # XML files
         root = ET.fromstring(content)
         channels = []
         for ch in root.findall(".//channel"):
@@ -71,6 +70,7 @@ def fetch_and_parse_epg(url):
                 channels.append(ch_name.strip())
         print(f"Processed {url} - Parsed {len(channels)} channels")
         return channels
+
     except Exception as e:
         print(f"Error parsing {url}: {e}")
         return []
@@ -82,6 +82,7 @@ def update_index_page(found_channels, not_found_channels, master_channels, merge
     eastern = pytz.timezone('US/Eastern')
     last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
+    # Proper file size calculation
     final_size = os.path.getsize(merged_file_path) / (1024 * 1024) if os.path.exists(merged_file_path) else 0.0
 
     html_content = f"""
@@ -95,8 +96,9 @@ def update_index_page(found_channels, not_found_channels, master_channels, merge
             table {{ border-collapse: collapse; width: 100%; max-width: 700px; font-size: 14px; }}
             th, td {{ border: 1px solid #ccc; padding: 5px; text-align: left; }}
             th {{ background-color: #f2f2f2; }}
-            tr.found {{ background-color: #d4edda; }}
-            tr.notfound {{ background-color: #f8d7da; }}
+            .found {{ background-color: #d4edda; }}
+            .notfound {{ background-color: #f8d7da; }}
+            button {{ margin: 5px 0; }}
         </style>
     </head>
     <body>
@@ -108,16 +110,24 @@ def update_index_page(found_channels, not_found_channels, master_channels, merge
     <p><strong>Final merged file size:</strong> {final_size:.2f} MB</p>
 
     <h2>Channels Found</h2>
-    <table>
-        <tr><th>Channel Name</th></tr>
-        {''.join([f'<tr class="found"><td>{ch}</td></tr>' for ch in found_channels])}
-    </table>
+    <button onclick="document.getElementById('found').style.display='block'">Show Found</button>
+    <button onclick="document.getElementById('found').style.display='none'">Hide Found</button>
+    <div id="found" style="display:none;">
+        <table>
+            <tr><th>Channel Name</th></tr>
+            {''.join([f'<tr class="found"><td>{ch}</td></tr>' for ch in found_channels])}
+        </table>
+    </div>
 
     <h2>Channels Not Found</h2>
-    <table>
-        <tr><th>Channel Name</th></tr>
-        {''.join([f'<tr class="notfound"><td>{ch}</td></tr>' for ch in not_found_channels])}
-    </table>
+    <button onclick="document.getElementById('notfound').style.display='block'">Show Not Found</button>
+    <button onclick="document.getElementById('notfound').style.display='none'">Hide Not Found</button>
+    <div id="notfound" style="display:none;">
+        <table>
+            <tr><th>Channel Name</th></tr>
+            {''.join([f'<tr class="notfound"><td>{ch}</td></tr>' for ch in not_found_channels])}
+        </table>
+    </div>
     </body>
     </html>
     """
@@ -152,7 +162,7 @@ def main():
 
     not_found_channels = [normalize_channel_name(ch) for ch in master_channels if normalize_channel_name(ch) not in found_channels]
 
-    # Write merged EPG XML (for simplicity just writing all normalized found channels)
+    # Write merged EPG XML (just found channels)
     merged_file = "merged_epg.xml.gz"
     with gzip.open(merged_file, "wt", encoding="utf-8") as f:
         f.write("<tv>\n")
@@ -160,7 +170,7 @@ def main():
             f.write(f'  <channel id="{ch}"><display-name>{ch}</display-name></channel>\n')
         f.write("</tv>\n")
 
-    # Update index.html dynamically
+    # Now the merged file exists, size will be correct
     update_index_page(found_channels, not_found_channels, master_channels, merged_file)
 
 if __name__ == "__main__":
