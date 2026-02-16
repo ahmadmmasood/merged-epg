@@ -142,7 +142,6 @@ def main():
         epg_sources = [line.strip() for line in f if line.strip()]
 
     found_channels = []
-    not_found_channels = []
 
     # Process each EPG source
     for url in epg_sources:
@@ -154,29 +153,27 @@ def main():
             if not normalized:
                 continue
 
-            # Match strictly against master list after normalization
-            matched = None
+            # Match against master list
             for master in master_channels:
                 master_norm = normalize_channel_name(master)
                 if not master_norm:
                     continue
                 if normalized.lower() == master_norm.lower() or normalized.lower().startswith(master_norm.lower()):
-                    matched = master
+                    if master not in found_channels:
+                        found_channels.append(master)
                     break
 
-            if matched and matched not in found_channels:
-                found_channels.append(matched)
-            elif not matched and normalized not in not_found_channels:
-                not_found_channels.append(normalized)
+    # Channels not found are those in master list but missing in found
+    not_found_channels = [ch for ch in master_channels if ch not in found_channels]
 
-    # Create merged file (placeholder, replace with your actual merge logic)
-    merged_filename = "merged_epg.xml.gz"
-    with gzip.open(merged_filename, "wb") as f:
-        f.write(b"<tv></tv>")
+    # Use the real merged_epg.xml.gz if it exists
+    merged_file_path = "merged_epg.xml.gz"
+    if os.path.exists(merged_file_path):
+        final_file_size = os.path.getsize(merged_file_path) / (1024*1024)
+    else:
+        final_file_size = 0.0
 
-    final_file_size = os.path.getsize(merged_filename) / (1024*1024)
     print(f"Final merged file size: {final_file_size:.2f} MB")
-
     update_index_page(found_channels, not_found_channels, master_channels, final_file_size)
 
 if __name__ == "__main__":
