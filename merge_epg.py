@@ -43,6 +43,8 @@ def keep_us_channel(channel_name):
 all_channels = {}
 all_programs = {}
 
+log_messages = []  # List to collect log messages
+
 # Check if txt file exists, else fallback to XML
 def fetch_txt_channels(url):
     try:
@@ -50,8 +52,8 @@ def fetch_txt_channels(url):
         response = requests.get(txt_url, timeout=15)
         response.raise_for_status()
         return response.text.splitlines()
-    except requests.exceptions.RequestException:
-        print(f"TXT fetch failed for {txt_url}: {e}")
+    except requests.exceptions.RequestException as e:
+        log_messages.append(f"TXT fetch failed for {txt_url}: {e}")
         return []
 
 def fetch_xml_channels(url):
@@ -62,12 +64,12 @@ def fetch_xml_channels(url):
         tree = ET.parse(BytesIO(content))
         return tree.getroot()
     except Exception as e:
-        print(f"Error fetching/parsing {url}: {e}")
+        log_messages.append(f"XML fetch failed for {url}: {e}")
         return None
 
 # Process channels and programs
 for url in sources:
-    print(f"Processing {url}...")
+    log_messages.append(f"Processing {url}...")
     
     channels = fetch_txt_channels(url)  # Try fetching txt first
     if not channels:  # Fallback to XML if no txt found
@@ -76,6 +78,7 @@ for url in sources:
             continue
         channels = [ch.find('display-name').text.strip() for ch in root.findall('channel')]
     
+    # Process channels
     for channel_name in channels:
         if channel_name:
             # Only keep channels matching our criteria
@@ -86,7 +89,7 @@ for url in sources:
             if channel_name not in all_channels:
                 all_channels[channel_name] = channel_name  # Use name as unique identifier
 
-    # Process programs
+    # Process programs (only if root is defined)
     if root:
         for pr in root.findall('programme'):
             pr_title_el = pr.find('title')
@@ -122,12 +125,12 @@ channels_count = len(all_channels)
 programs_count = len(all_programs)
 file_size_mb = round(len(final_xml) / (1024 * 1024), 2)
 
-# Print to console for debugging
-print(f"EPG Merge Status")
-print(f"Last updated: {timestamp}")
-print(f"Channels kept: {channels_count}")
-print(f"Programs kept: {programs_count}")
-print(f"Final merged file size: {file_size_mb} MB")
+# Add the log message to index page
+log_messages.append(f"EPG Merge Status\nLast updated: {timestamp}\nChannels kept: {channels_count}\nPrograms kept: {programs_count}\nFinal merged file size: {file_size_mb} MB")
+
+# Print logs to console for debugging
+for msg in log_messages:
+    print(msg)
 
 # ---------------- Update Index Page ----------------
 index_html = f"""<!DOCTYPE html>
@@ -144,7 +147,7 @@ index_html = f"""<!DOCTYPE html>
 <p><strong>Final merged file size:</strong> {file_size_mb} MB</p>
 <p><strong>Logs:</strong> <button onclick="document.getElementById('logs').style.display = 'block';">Show Logs</button></p>
 <div id="logs" style="display:none;">
-<pre>{open('merge_log.txt').read()}</pre>
+<pre>{chr(10).join(log_messages)}</pre>
 </div>
 </body>
 </html>"""
