@@ -8,110 +8,95 @@ from io import BytesIO
 sources = [
     # US feeds
     "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz",
     "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
 
     # Foreign feeds
     "https://iptv-epg.org/files/epg-eg.xml.gz",
-    "https://www.open-epg.com/files/egypt1.xml.gz",
-    "https://www.open-epg.com/files/egypt2.xml.gz",
     "https://iptv-epg.org/files/epg-in.xml.gz",
-    "https://www.open-epg.com/files/india3.xml.gz",
     "https://iptv-epg.org/files/epg-lb.xml.gz"
 ]
 
-# ---------------- Channel Criteria ----------------
+# ---------------- Indian Channels ----------------
 indian_channels = [
-    "star plus", "star bharat", "star gold", "star sports",  # Star Network
-    "zee tv", "zee cinema", "zee news",  # Zee Network
-    "sony entertainment", "sony sab", "sony max",  # Sony Network
-    "colors", "colors cineplex",  # Colors / Viacom
-    "b4u", "b4u movies", "balle balle", "9x jalwa", "mtv india",  # Additional Indian Channels
+    "star plus",
+    "star bharat",
+    "star gold",
+    "star sports",
+    "zee tv",
+    "zee cinema",
+    "zee news",
+    "sony entertainment",
+    "sony sab",
+    "sony max",
+    "colors",
+    "colors cineplex",
+    "b4u balle balle",
+    "mtv india",
 ]
 
 # ---------------- US East / Local Rules ----------------
 def keep_us_channel(channel_name):
     name_lower = channel_name.lower()
-    # Keep local feed channels always
     if "us_locals1" in channel_name.lower():
         return True
-    # Keep "East" channels or ones with neither "East" nor "West"
     return "east" in name_lower or ("east" not in name_lower and "west" not in name_lower)
 
 # ---------------- Fetch and parse XML ----------------
 all_channels = {}
 all_programs = {}
 
-log_messages = []  # List to collect log messages
-
-# Check if txt file exists, else fallback to XML
-def fetch_txt_channels(url):
-    try:
-        txt_url = url.replace(".xml.gz", ".txt")  # Attempt to fetch TXT version
-        response = requests.get(txt_url, timeout=15)
-        response.raise_for_status()
-        return response.text.splitlines()
-    except requests.exceptions.RequestException as e:
-        log_messages.append(f"TXT fetch failed for {txt_url}: {e}")
-        return []
-
-def fetch_xml_channels(url):
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        content = gzip.decompress(r.content)
-        tree = ET.parse(BytesIO(content))
-        return tree.getroot()
-    except Exception as e:
-        log_messages.append(f"XML fetch failed for {url}: {e}")
-        return None
-
-# Process channels and programs
 for url in sources:
-    log_messages.append(f"Processing {url}...")
-    
-    # Try fetching txt file first
-    channels = fetch_txt_channels(url)
-    
-    # If txt fetch fails, try fetching XML
-    root = None
-    if not channels:
-        root = fetch_xml_channels(url)
-        if root is None:
-            log_messages.append(f"Skipping {url} as XML parsing failed.")
-            continue  # Skip to next URL if XML parsing fails
+    try:
+        # Only fetch TXT for URLs with 'epgshare01'
+        if "epgshare01" in url:
+            txt_url = url.replace("xml.gz", "txt")
+            try:
+                txt_response = requests.get(txt_url, timeout=15)
+                txt_response.raise_for_status()
+                txt_content = txt_response.text
+                # Parse TXT content (process based on your specific format)
+                # Example: extract and add channels to all_channels based on the content
+                print(f"TXT fetch successful for {txt_url}")
+            except requests.exceptions.RequestException as e:
+                print(f"TXT fetch failed for {txt_url}: {e}")
+        else:
+            # Process XML for non-epgshare01 URLs (iptv-epg.org)
+            print(f"Processing XML: {url}")
+            r = requests.get(url, timeout=15)
+            r.raise_for_status()
+            content = gzip.decompress(r.content)
+            tree = ET.parse(BytesIO(content))
+            root = tree.getroot()
 
-        channels = [ch.find('display-name').text.strip() for ch in root.findall('channel')]
+            # Process channels
+            for ch in root.findall('channel'):
+                ch_id = ch.get('id')
+                ch_name_el = ch.find('display-name')
+                if ch_id and ch_name_el is not None:
+                    ch_name = ch_name_el.text.strip()
+                    # Keep only East or Local Channels
+                    if "epg_ripper_US2" in url or "unitedstates10" in url:
+                        if not keep_us_channel(ch_name):
+                            continue
+                    # Deduplicate by channel ID
+                    if ch_id not in all_channels:
+                        all_channels[ch_id] = ET.tostring(ch, encoding='unicode')
 
-    # Process channels
-    for channel_name in channels:
-        if channel_name:
-            # Only keep channels matching our criteria
-            if "epg_ripper_US2" in url or "unitedstates10" in url:
-                if not keep_us_channel(channel_name):
-                    continue
-            # Deduplicate channels based on channel name
-            if channel_name not in all_channels:
-                all_channels[channel_name] = channel_name  # Use name as unique identifier
-
-    # Process programs if XML root is defined (only for XML files)
-    if root:
-        for pr in root.findall('programme'):
-            pr_title_el = pr.find('title')
-            if pr_title_el is not None:
-                pr_title = pr_title_el.text.strip() if pr_title_el.text else ""
-                pr_id = f"{pr.get('channel')}_{pr_title}"
-                # Only add programs for channels in our list
+            # Process programs
+            for pr in root.findall('programme'):
+                pr_id = f"{pr.get('channel')}_{pr.find('title').text if pr.find('title') is not None else ''}"
                 if pr_id not in all_programs:
                     all_programs[pr_id] = ET.tostring(pr, encoding='unicode')
+
+    except Exception as e:
+        print(f"Error fetching/parsing {url}: {e}")
 
 # ---------------- Build final XML ----------------
 root = ET.Element("tv")
 
 # Add channels
-for ch_name in all_channels.values():
-    ch_element = ET.Element("channel", id=ch_name)  # Assuming each channel needs a unique id
-    root.append(ch_element)
+for ch_xml in all_channels.values():
+    root.append(ET.fromstring(ch_xml))
 
 # Add programs
 for pr_xml in all_programs.values():
@@ -130,34 +115,9 @@ channels_count = len(all_channels)
 programs_count = len(all_programs)
 file_size_mb = round(len(final_xml) / (1024 * 1024), 2)
 
-# Add the log message to index page
-log_messages.append(f"EPG Merge Status\nLast updated: {timestamp}\nChannels kept: {channels_count}\nPrograms kept: {programs_count}\nFinal merged file size: {file_size_mb} MB")
-
-# Print logs to console for debugging
-for msg in log_messages:
-    print(msg)
-
-# ---------------- Update Index Page ----------------
-index_html = f"""<!DOCTYPE html>
-<html>
-<head>
-<title>EPG Merge Status</title>
-<meta charset="UTF-8">
-</head>
-<body>
-<h1>EPG Merge Status</h1>
-<p><strong>Last updated:</strong> {timestamp}</p>
-<p><strong>Channels kept:</strong> {channels_count}</p>
-<p><strong>Programs kept:</strong> {programs_count}</p>
-<p><strong>Final merged file size:</strong> {file_size_mb} MB</p>
-<p><strong>Logs:</strong> <button onclick="document.getElementById('logs').style.display = 'block';">Show Logs</button></p>
-<div id="logs" style="display:none;">
-<pre>{chr(10).join(log_messages)}</pre>
-</div>
-</body>
-</html>"""
-
-# Write to index.html (you can change file path if needed)
-with open('index.html', 'w') as f:
-    f.write(index_html)
+print(f"EPG Merge Status")
+print(f"Last updated: {timestamp}")
+print(f"Channels kept: {channels_count}")
+print(f"Programs kept: {programs_count}")
+print(f"Final merged file size: {file_size_mb} MB")
 
