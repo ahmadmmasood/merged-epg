@@ -3,6 +3,7 @@ import re
 import gzip
 import pytz
 import requests
+from io import BytesIO
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
@@ -51,7 +52,8 @@ def normalize_channel_name(name):
 # =========================
 def fetch_and_parse_epg(url):
     print(f"Fetching {url}")
-    content = None
+    parsed_channels = []
+
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
@@ -60,32 +62,24 @@ def fetch_and_parse_epg(url):
         print(f"Error fetching content from {url}: {e}")
         return []
 
-    parsed_channels = []
-
-    # Determine file type
-    if url.endswith(".xml.gz"):
-        try:
-            with gzip.open(url.split("/")[-1], "wb") as f:
-                f.write(content)
-            with gzip.open(url.split("/")[-1], "rb") as f:
+    try:
+        if url.endswith(".xml.gz"):
+            with gzip.GzipFile(fileobj=BytesIO(content)) as f:
                 tree = ET.parse(f)
                 root = tree.getroot()
                 for channel in root.findall(".//channel"):
                     ch_name = channel.get("name") or channel.findtext("display-name")
                     if ch_name:
                         parsed_channels.append(ch_name)
-        except Exception as e:
-            print(f"Error parsing XML from {url}: {e}")
-    else:
-        # TXT file
-        try:
+        else:
+            # TXT file
             lines = content.decode("utf-8", errors="ignore").splitlines()
             for line in lines:
                 line = line.strip()
                 if line:
                     parsed_channels.append(line)
-        except Exception as e:
-            print(f"Error parsing TXT from {url}: {e}")
+    except Exception as e:
+        print(f"Error parsing {url}: {e}")
 
     print(f"Processed {url} - Parsed {len(parsed_channels)} channels")
     return parsed_channels
@@ -102,105 +96,97 @@ def load_master_channels(file_path):
 # =========================
 # Update index.html
 # =========================
-def update_index_page(channels_count, programs_count, file_size, log_data, found_channels, not_found_channels, master_channels):
+def update_index_page(found_channels, not_found_channels, log_data, merged_file_path, master_channels):
     eastern = pytz.timezone('US/Eastern')
     last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
+    file_size = os.path.getsize(merged_file_path) / (1024 * 1024) if os.path.exists(merged_file_path) else 0
+    channels_count = len(found_channels)
+
     html_content = f"""
     <html>
-    <head><title>EPG Merge Status</title></head>
+    <head>
+        <title>EPG Merge Status</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+            th, td {{ border: 1px solid #ccc; padding: 6px 10px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .found {{ background-color: #d4edda; }}
+            .notfound {{ background-color: #f8d7da; }}
+            .log {{ white-space: pre-wrap; background-color: #eee; padding: 10px; }}
+        </style>
+    </head>
     <body>
-    <h1>EPG Merge Status</h1>
-    <p><strong>Last updated:</strong> {last_updated}</p>
-    <p><strong>Channels kept:</strong> {channels_count}</p>
-    <p><strong>Programs kept:</strong> {programs_count}</p>
-    <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
+        <h1>EPG Merge Status</h1>
+        <p><strong>Last updated:</strong> {last_updated}</p>
+        <p><strong>Channels kept:</strong> {channels_count}</p>
+        <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
 
-    <h2>Logs:</h2>
-    <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
-    <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-    <div id="logs" style="display:none;">
-        <pre>{log_data}</pre>
-    </div>
+        <h2>Logs:</h2>
+        <div class="log">{log_data}</div>
 
-    <h2>Channel Analysis:</h2>
-    <button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
-    <button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
-    <div id="analysis" style="display:none;">
+        <h2>Channel Analysis</h2>
         <p><strong>Total Channels in Master List:</strong> {len(master_channels)}</p>
-        <p><strong>Channels Found:</strong> {channels_count}</p>
-        <p><strong>Channels Not Found:</strong> {len(not_found_channels)}</p>
 
         <h3>Channels Found:</h3>
-        <table border="1">
-        <tr><th>Original Channel</th><th>Normalized Name</th></tr>
-        {''.join([f"<tr><td>{orig}</td><td>{norm}</td></tr>" for orig, norm in found_channels])}
+        <table>
+            <tr><th>Original Channel</th><th>Normalized</th><th>Matched?</th></tr>
+            {''.join([f'<tr class="found"><td>{orig}</td><td>{norm}</td><td>Yes</td></tr>' for orig, norm in found_channels])}
         </table>
 
         <h3>Channels Not Found:</h3>
-        <table border="1">
-        <tr><th>Original Channel</th><th>Normalized Name</th></tr>
-        {''.join([f"<tr><td>{orig}</td><td>{norm}</td></tr>" for orig, norm in not_found_channels])}
+        <table>
+            <tr><th>Original Channel</th><th>Normalized</th><th>Matched?</th></tr>
+            {''.join([f'<tr class="notfound"><td>{orig}</td><td>{norm}</td><td>No</td></tr>' for orig, norm in not_found_channels])}
         </table>
-    </div>
     </body>
     </html>
     """
 
-    with open("index.html", "w") as file:
-        file.write(html_content)
+    with open("index.html", "w") as f:
+        f.write(html_content)
     print("index.html has been updated.")
 
 # =========================
 # Main Merge Process
 # =========================
 def main():
-    # Load master channels
     master_channels = load_master_channels("master_channels.txt")
     master_normalized = {normalize_channel_name(ch): ch for ch in master_channels}
 
-    # Load EPG sources
     with open("epg_sources.txt", "r") as f:
         epg_sources = [line.strip() for line in f if line.strip()]
 
     found_channels = []
     not_found_channels = []
-    log_data = []
-    total_programs = 0
+    log_data_list = []
 
     merged_channels_set = set()
 
-    # Process each EPG source
     for url in epg_sources:
         parsed_channels = fetch_and_parse_epg(url)
-        parsed_count = len(parsed_channels)
-
         for ch in parsed_channels:
             norm_ch = normalize_channel_name(ch)
             if not norm_ch:
                 continue
-            if norm_ch in master_normalized:
+
+            matched = norm_ch in master_normalized
+            if matched:
                 merged_channels_set.add(norm_ch)
                 found_channels.append((ch, norm_ch))
             else:
                 not_found_channels.append((ch, norm_ch))
 
-        log_data.append(f"Processed {url} - Parsed {parsed_count} channels")
+            # Add detailed logging for comparison
+            log_data_list.append(f"Parsed: {ch} -> Normalized: {norm_ch} -> Matched: {'Yes' if matched else 'No'}")
 
-    # Calculate final merged file size
+    log_data = "\n".join(log_data_list)
+
+    # Path to merged file (assume it exists or will be generated)
     merged_file_path = "merged_epg.xml.gz"
-    final_size = os.path.getsize(merged_file_path) / (1024 * 1024) if os.path.exists(merged_file_path) else 0
 
-    # Update HTML index
-    update_index_page(
-        channels_count=len(merged_channels_set),
-        programs_count=total_programs,
-        file_size=final_size,
-        log_data="\n".join(log_data),
-        found_channels=found_channels,
-        not_found_channels=not_found_channels,
-        master_channels=master_channels
-    )
+    update_index_page(found_channels, not_found_channels, log_data, merged_file_path, master_channels)
 
 if __name__ == "__main__":
     main()
