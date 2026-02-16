@@ -1,14 +1,30 @@
 
-<!DOCTYPE html>
 <html>
-<head>
-<title>EPG Merge Status</title>
-<meta charset="UTF-8">
-</head>
+<head><title>EPG Merge Status</title></head>
 <body>
 <h1>EPG Merge Status</h1>
-<p><strong>Last updated:</strong> 2026-02-13 17:28:11 EST</p>
-<p><strong>Channels kept:</strong> 0</p>
-<p><strong>Programs kept:</strong> 0</p>
+<p><strong>Last updated:</strong> 2026-02-16 15:20:07 </p>
+<p><strong>Channels kept:</strong> 7428</p>
+<p><strong>Programs kept:</strong> 249645</p>
+<p><strong>Final merged file size:</strong> 204.21 MB</p>
+<h2>Logs:</h2>
+<button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
+<button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
+<div id="logs" style="display:none;">
+    <pre>Processing XML: https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz
+Processing XML: https://www.open-epg.com/files/unitedstates10.xml.gz
+Processing XML: https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz
+Error fetching/parsing https://iptv-epg.org/files/epg-eg.xml.gz: 'NoneType' object has no attribute 'strip'
+Processing XML: https://www.open-epg.com/files/egypt1.xml.gz
+Processing XML: https://www.open-epg.com/files/egypt2.xml.gz
+Processing XML: https://iptv-epg.org/files/epg-in.xml.gz
+Processing XML: https://www.open-epg.com/files/india3.xml.gz
+Error fetching/parsing https://iptv-epg.org/files/epg-lb.xml.gz: 'NoneType' object has no attribute 'strip'
+EPG Merge Status
+Last updated: 2026-02-16 15:20:07 
+Channels kept: 7428
+Programs kept: 249645
+Final merged file size: 204.21 MB</pre>
+</div>
 </body>
 </html>
