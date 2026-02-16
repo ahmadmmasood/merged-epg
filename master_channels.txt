@@ -1,0 +1,276 @@
+=========================
+PREMIUM TIER
+=========================
+MGM+
+MGM+ Hits
+MGM+ Drive-In
+MGM+ Marquee
+
+ScreenPix
+ScreenPix Action
+ScreenPix Westerns
+ScreenPix Voices
+
+HBO
+HBO Hits
+HBO Comedy
+HBO Drama
+HBO Family
+HBO Signature
+HBO Zone
+
+Cinemax
+ActionMax
+MoreMax
+ThrillerMax
+MovieMax
+5StarMax
+OuterMax
+
+Showtime
+Showtime 2
+SHO×BET
+Showtime Extreme
+Showtime Family Zone
+Showtime Next
+Showtime Showcase
+Showtime Women
+
+The Movie Channel
+The Movie Channel Xtra
+Flix
+
+Starz
+Starz Cinema
+Starz Comedy
+Starz Edge
+Starz InBlack
+Starz Kids & Family
+
+Starz Encore
+Starz Encore Action
+Starz Encore Black
+Starz Encore Classic
+Starz Encore Family
+Starz Encore Suspense
+Starz Encore Westerns
+
+IndiePlex
+MoviePlex
+RetroPlex
+
+=========================
+BASIC / EXPANDED BASIC
+=========================
+A&E
+AMC
+Animal Planet
+BBC America
+BET
+BET Her
+BET Jams
+BET Soul
+Bloomberg Television
+Bravo
+Cartoon Network
+Cartoonito
+CBS Sports Network
+CNBC
+CNBC World
+CNN
+CNN International
+Comedy Central
+Cooking Channel
+Discovery Channel
+Discovery Family
+Discovery Life
+Disney Channel
+Disney Junior
+Disney XD
+E!
+ESPN
+ESPN2
+ESPNews
+ESPNU
+Food Network
+Fox Business Network
+Fox News Channel
+Fox Sports 1
+Fox Sports 2
+Freeform
+FX
+FXX
+FX Movie Channel
+Game Show Network
+Golf Channel
+Hallmark Channel
+Hallmark Family
+Hallmark Mystery
+HGTV
+History
+HLN
+IFC
+Investigation Discovery
+ION Television
+ION Mystery
+ION Plus
+Lifetime
+LMN
+MLB Network
+MotorTrend
+MSNBC
+MTV
+MTV2
+MTV Classic
+MTV Live
+NBA TV
+Newsmax
+NewsNation
+NFL Network
+NFL RedZone
+NHL Network
+Nickelodeon
+Nick at Nite
+Nick Jr.
+Nicktoons
+NickMusic
+TeenNick
+Oprah Winfrey Network
+Oxygen
+Paramount Network
+Pop
+Science Channel
+SEC Network
+Smithsonian Channel
+SundanceTV
+Syfy
+TBS
+TCM
+Tennis Channel
+TLC
+TNT
+Travel Channel
+TruTV
+TV Land
+USA Network
+VH1
+Vice TV
+WE tv
+
+=========================
+LOCAL CHANNELS – DC / BALTIMORE OTA
+=========================
+WRC-HD
+COZI TV
+CRIMES
+Oxygen
+
+WTTG-DT
+BUZZR
+Start TV
+
+WJLA
+Charge!
+Comet
+ROAR
+
+WUSA-HD
+Crime TV
+Quest
+The Nest
+QVC
+
+WBAL-DT
+MeTV
+Story Television
+GetTV
+
+WFDC-DT
+GRIT
+UniMas
+
+WDCA
+Movies!
+Heroes & Icons
+Fox Weather
+
+MPT-HD
+MPT-2
+MPT Kids
+NHK World Japan
+
+WDVM-SD
+
+WETA-HD
+WETA UK
+WETA Kids
+WORLD Channel
+Metro
+
+WHUT
+PBS Kids
+
+WZDC
+XITOS
+
+WDCW-DT
+Antenna TV
+
+CWWNUV
+
+Bounce
+Court TV
+Laff
+Busted
+HSN
+AltaVsn
+DEFY
+
+=========================
+REGIONAL NETWORKS – DC / BALTIMORE
+=========================
+MASN (Mid-Atlantic Sports Network)
+NBC Sports Washington
+Comcast SportsNet Mid-Atlantic
+NewsChannel 8 (WJLA News)
+WJZ 13 (CBS Baltimore)
+WMAR 2 (ABC Baltimore)
+WMPB (PBS Maryland)
+Washington Post TV / streaming feeds
+Local Weather Channels (WJLA Weather, WUSA Weather, WBAL Weather)
+Maryland Public Broadcasting Sports & Specials
+Maryland Lottery / Lottery TV feed
+DC Public Access Channels
+Baltimore Public Access Channels
+
+=========================
+FOREIGN TIER
+=========================
+# Egyptian Channels
+Al Ahram TV
+Al Hayat TV
+Al Masriya TV
+Nile TV International
+Al Nahar TV
+CBC (Egypt)
+Dream TV
+
+# Indian Channels
+NDTV
+Aaj Tak
+Colors TV
+Zee TV
+Star Plus
+Sony TV
+Sun TV
+Republic TV
+Times Now
+TV9
+
+# Lebanese Channels
+LBCI
+MTV Lebanon
+Al Jadeed
+Future TV
+OTV Lebanon
+
