@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import os
 from datetime import datetime
 import pytz
+import re
 
 # Load the master list of channels
 def load_master_list():
@@ -11,6 +12,12 @@ def load_master_list():
         # Read in all channels, ignoring lines that start with "#" and making the matching case-insensitive
         master_channels = [line.strip().lower() for line in f if line.strip() and not line.startswith("#")]
     return master_channels
+
+# Normalize the channel names by removing common suffixes and making them case-insensitive
+def normalize_channel_name(channel_name):
+    # Remove common suffixes like .us2, .us_locals1, .hd, etc.
+    normalized_name = re.sub(r"(\.us2|\.us_locals1|\.hd|\.(?!.*[a-z])|[-_])", "", channel_name)
+    return normalized_name.strip().lower()
 
 # Fetch and parse the EPG data from the given URL
 def fetch_and_parse_epg(url):
@@ -52,8 +59,14 @@ def parse_xml(epg_content, channels):
     for channel in root.iter('channel'):
         # Use .text.strip() to handle extra spaces and make it case-insensitive
         channel_name = channel.find('display-name').text.strip().lower()
-        if channel_name in channels:
+        normalized_channel_name = normalize_channel_name(channel_name)
+        
+        # Check if the normalized channel name matches any in the master list
+        if normalized_channel_name in channels:
             found_channels.append(channel_name)
+            print(f"Found channel: {channel_name}")
+        else:
+            print(f"Skipping channel (no match): {channel_name}")
     
     return found_channels
 
@@ -63,8 +76,14 @@ def parse_txt(epg_content, channels):
     for line in epg_content.splitlines():
         # Clean up each line and check for matches
         channel_name = line.strip().lower()
-        if channel_name in channels:
+        normalized_channel_name = normalize_channel_name(channel_name)
+        
+        # Check if the normalized channel name matches any in the master list
+        if normalized_channel_name in channels:
             found_channels.append(channel_name)
+            print(f"Found channel: {channel_name}")
+        else:
+            print(f"Skipping channel (no match): {channel_name}")
     return found_channels
 
 # Update the index.html page with the results
