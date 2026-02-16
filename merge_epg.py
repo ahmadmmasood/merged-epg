@@ -13,10 +13,7 @@ from datetime import datetime
 def normalize_channel_name(name):
     if not name:
         return None
-
-    # Basic normalization (safe + predictable)
-    name = name.strip().lower()
-    return name
+    return name.strip().lower()
 
 
 # ==========================
@@ -35,19 +32,60 @@ def fetch_and_parse_epg(url):
             with gzip.GzipFile(fileobj=io.BytesIO(content)) as gz:
                 content = gz.read()
 
-        parser = etree.XMLParser(recover=True, encoding="utf-8")
-        root = etree.fromstring(content, parser=parser)
+        # ==========================
+        # XML FILES
+        # ==========================
+        if url.endswith(".xml") or url.endswith(".xml.gz"):
+            parser = etree.XMLParser(recover=True, encoding="utf-8")
+            root = etree.fromstring(content, parser=parser)
 
-        channels = []
-        for channel in root.findall("channel"):
-            channel_id = channel.get("id")
-            if channel_id:
-                normalized = normalize_channel_name(channel_id)
+            if root is None:
+                print(f"Invalid XML structure in {url}")
+                return []
+
+            channels = []
+            for channel in root.findall("channel"):
+                channel_id = channel.get("id")
+                if channel_id:
+                    normalized = normalize_channel_name(channel_id)
+                    if normalized:
+                        channels.append(normalized)
+
+            print(f"Parsed {len(channels)} XML channels from {url}")
+            return channels
+
+        # ==========================
+        # TXT FILES
+        # ==========================
+        elif url.endswith(".txt"):
+
+            text_data = content.decode("utf-8", errors="ignore")
+            lines = text_data.splitlines()
+
+            channels = []
+
+            for line in lines:
+                line = line.strip()
+
+                if not line or line.startswith("#"):
+                    continue
+
+                # If CSV-style, take first column
+                if "," in line:
+                    channel_name = line.split(",")[0]
+                else:
+                    channel_name = line
+
+                normalized = normalize_channel_name(channel_name)
                 if normalized:
                     channels.append(normalized)
 
-        print(f"Successfully parsed {len(channels)} channels from {url}")
-        return channels
+            print(f"Parsed {len(channels)} TXT channels from {url}")
+            return channels
+
+        else:
+            print(f"Unsupported file type: {url}")
+            return []
 
     except Exception as e:
         print(f"Error fetching content from {url}: {e}")
@@ -86,7 +124,9 @@ def update_index_page(channels_count, programs_count, file_size,
 <body>
 <h1>EPG Merge Status</h1>
 <p><strong>Last updated:</strong> {last_updated}</p>
-<p><strong>Channels kept:</strong> {channels_count}</p>
+<p><strong>Total Channels in Master List:</strong> {len(master_channels)}</p>
+<p><strong>Channels Found:</strong> {channels_count}</p>
+<p><strong>Channels Not Found:</strong> {len(not_found_channels)}</p>
 <p><strong>Programs kept:</strong> {programs_count}</p>
 <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
 
@@ -101,21 +141,19 @@ def update_index_page(channels_count, programs_count, file_size,
 <button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
 <button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
 <div id="analysis" style="display:none;">
-    <p><strong>Total Channels in Master List:</strong> {len(master_channels)}</p>
-    <p><strong>Channels Found:</strong> {channels_count}</p>
-    <p><strong>Channels Not Found:</strong> {len(not_found_channels)}</p>
 
-    <h3>Channels Found:</h3>
+    <h3>Channels Found (From Master List):</h3>
     <table border="1">
     <tr><th>Channel Name</th></tr>
     {''.join([f"<tr><td>{channel}</td></tr>" for channel in sorted(found_channels)])}
     </table>
 
-    <h3>Channels Not Found:</h3>
+    <h3>Channels Not Found (Missing From Sources):</h3>
     <table border="1">
     <tr><th>Channel Name</th></tr>
     {''.join([f"<tr><td>{channel}</td></tr>" for channel in sorted(not_found_channels)])}
     </table>
+
 </div>
 
 </body>
@@ -133,33 +171,38 @@ def update_index_page(channels_count, programs_count, file_size,
 # ==========================
 def main():
 
-    # Load master channel list
-    master_channels = load_master_channels("master_channels.txt")
+    master_channels = set(load_master_channels("master_channels.txt"))
     print(f"Loaded {len(master_channels)} channels from master list.")
 
-    # Load EPG source URLs
     with open("epg_sources.txt", "r", encoding="utf-8") as f:
         epg_sources = [line.strip() for line in f if line.strip()]
 
-    found_channels = set()
-    not_found_channels = set()
+    all_parsed_channels = set()
     log_data = []
-    total_programs = 0  # Placeholder for future real merge
+    total_programs = 0  # Placeholder for future merge logic
 
+    # ==========================
+    # PARSE ALL SOURCES
+    # ==========================
     for url in epg_sources:
         epg_channels = fetch_and_parse_epg(url)
 
         for channel in epg_channels:
-            if channel in master_channels:
-                found_channels.add(channel)
-            else:
-                not_found_channels.add(channel)
+            all_parsed_channels.add(channel)
 
         log_data.append(
-            f"Processed {url} - Found {len(epg_channels)} channels"
+            f"Processed {url} - Parsed {len(epg_channels)} channels"
         )
 
-    # Calculate merged file size if exists
+    # ==========================
+    # COMPARE AGAINST MASTER
+    # ==========================
+    found_channels = master_channels.intersection(all_parsed_channels)
+    not_found_channels = master_channels.difference(all_parsed_channels)
+
+    print(f"Master channels found: {len(found_channels)}")
+    print(f"Master channels missing: {len(not_found_channels)}")
+
     final_file = "merged_epg.xml.gz"
     final_size = (
         os.path.getsize(final_file) / (1024 * 1024)
