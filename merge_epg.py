@@ -6,7 +6,8 @@ from datetime import datetime
 def load_master_channels(file_path):
     """ Load the master channel list from a text file """
     with open(file_path, 'r') as file:
-        channels = [line.strip().lower() for line in file.readlines()]
+        channels = [line.strip().lower() for line in file.readlines()]  # Make case-insensitive
+    print(f"Loaded {len(channels)} channels from the master list.")
     return channels
 
 def update_index_page(channels_count, programs_count, file_size, log_data):
@@ -41,18 +42,27 @@ def parse_and_filter_channels(master_channels, epg_file):
     """ Parse the provided XML EPG file and filter based on the master list """
     filtered_channels = []
     log_data = ""
-
+    
     try:
-        with gzip.open(epg_file, 'rt') as file:
-            lines = file.readlines()
-            log_data += f"Processing {epg_file}...\n"
-            for line in lines:
-                channel_name = line.strip().lower()
-                if channel_name in master_channels:
-                    filtered_channels.append(channel_name)
-            log_data += f"Found {len(filtered_channels)} channels matching the master list in {epg_file}.\n"
+        if epg_file.endswith('.gz'):
+            with gzip.open(epg_file, 'rt') as file:
+                lines = file.readlines()
+        else:
+            with open(epg_file, 'r') as file:
+                lines = file.readlines()
+
+        log_data += f"Processing {epg_file}...\n"
+        
+        for line in lines:
+            # Assume channel names are mentioned in lines (adjust this based on actual structure)
+            channel_name = line.strip().lower()  # Normalize to lowercase for case-insensitive matching
+            if channel_name in master_channels:
+                filtered_channels.append(channel_name)
+        
+        log_data += f"Found {len(filtered_channels)} channels matching the master list in {epg_file}.\n"
+        
     except Exception as e:
-        log_data = f"Error processing XML: {str(e)}"
+        log_data = f"Error processing file {epg_file}: {str(e)}"
 
     return filtered_channels, log_data
 
@@ -71,11 +81,12 @@ def process_epg_data():
     # Load the master channel list from the external file
     master_channels = load_master_channels("master_channels.txt")
 
-    # Example EPG sources to process (add your actual sources here)
+    # Example EPG sources to process (you can replace with actual file paths)
     epg_files = [
         "epgshare01/epg_ripper_US2.xml.gz", 
         "open-epg/egypt1.xml.gz",
-        "iptv-epg/epg-in.xml.gz"
+        "iptv-epg/epg-in.xml.gz",
+        "epgshare01/epg_ripper_US_LOCALS1.txt"
     ]
 
     # List to hold filtered channels
