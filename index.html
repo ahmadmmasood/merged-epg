@@ -1,45 +1,61 @@
-<html>
-<head><title>EPG Merge Status</title></head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EPG Merge Status</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #fafafa; }
+        h1, h2, h3 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr.found { background-color: #d4edda; }        /* green */
+        tr.notfound { background-color: #f8d7da; }     /* red */
+        .log { background-color: #eee; padding: 10px; white-space: pre-wrap; border: 1px solid #ccc; margin-bottom: 20px; }
+        .summary { margin-bottom: 20px; }
+        .summary p { margin: 4px 0; }
+        button { margin-bottom: 10px; padding: 6px 12px; }
+    </style>
+</head>
 <body>
-<h1>EPG Merge Status</h1>
-<p><strong>Last updated:</strong> 2026-02-16 14:02:47</p>
-<p><strong>Channels kept:</strong> 72</p>
-<p><strong>Programs kept:</strong> 72</p>
-<p><strong>Final merged file size:</strong> 37.00 MB</p>
 
-<h2>Logs:</h2>
+<h1>EPG Merge Status</h1>
+
+<div class="summary">
+    <p><strong>Last updated:</strong> <!--LAST_UPDATED--></p>
+    <p><strong>Channels kept:</strong> <!--CHANNELS_KEPT--></p>
+    <p><strong>Final merged file size:</strong> <!--MERGED_FILE_SIZE--> MB</p>
+    <p><strong>Total channels in master list:</strong> <!--MASTER_LIST_COUNT--></p>
+</div>
+
+<h2>Logs</h2>
 <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
 <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-<div id="logs" style="display:none;">
-    <pre>Source URL: https://epgshare01.online/epgshare01/epg_ripper_US2.txt
-    File Type: TXT
-    Status: Success
-    Details: Found 53 channels</pre>
+<div id="logs" class="log" style="display:none;">
+    <!--LOG_DATA-->
 </div>
 
-<h2>Channel Analysis:</h2>
-<button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
-<button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
-<div id="analysis" style="display:none;">
-    <p><strong>Total Channels in Master List:</strong> 229</p>
-    <p><strong>Channels Found:</strong> 72</p>
-    <p><strong>Channels Not Found:</strong> 183</p>
+<h2>Channel Analysis</h2>
 
-    <h3>Channels Found:</h3>
-    <table border="1">
-    <tr><th>Channel Name</th></tr>
-    <tr><td>amc</td></tr>
-    <tr><td>bet</td></tr>
-    <tr><td>bravo</td></tr>
-    </table>
+<h3>Channels Found</h3>
+<table>
+    <tr>
+        <th>Original Channel</th>
+        <th>Normalized</th>
+        <th>Matched?</th>
+    </tr>
+    <!--FOUND_CHANNELS-->
+</table>
 
-    <h3>Channels Not Found:</h3>
-    <table border="1">
-    <tr><th>Channel Name</th></tr>
-    <tr><td>mgm+</td></tr>
-    <tr><td>hbo</td></tr>
-    </table>
-</div>
+<h3>Channels Not Found</h3>
+<table>
+    <tr>
+        <th>Original Channel</th>
+        <th>Normalized</th>
+        <th>Matched?</th>
+    </tr>
+    <!--NOT_FOUND_CHANNELS-->
+</table>
 
 </body>
 </html>
