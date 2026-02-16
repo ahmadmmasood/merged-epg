@@ -4,60 +4,54 @@
     <meta charset="UTF-8">
     <title>EPG Merge Status</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #fafafa; margin: 20px; }
-        h1, h2, h3 { color: #333; }
-        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-        th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        tr.found { background-color: #d4edda; }        /* green for matched */
-        tr.notfound { background-color: #f8d7da; }     /* red for unmatched */
-        .log { background-color: #eee; padding: 10px; white-space: pre-wrap; border: 1px solid #ccc; margin-bottom: 20px; }
-        .summary p { margin: 4px 0; }
-        button { margin-bottom: 10px; padding: 6px 12px; cursor: pointer; }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #fafafa;
+            margin: 20px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 50%;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr.found {
+            background-color: #d4edda;
+        }
+        tr.notfound {
+            background-color: #f8d7da;
+        }
+        h1, h2 {
+            color: #333;
+        }
     </style>
 </head>
 <body>
+    <h1>EPG Merge Status</h1>
+    <p><strong>Last updated:</strong> 1970-01-01 00:00:00</p>
+    <p><strong>Total channels in master list:</strong> 0</p>
+    <p><strong>Channels found:</strong> 0</p>
+    <p><strong>Channels not found:</strong> 0</p>
+    <p><strong>Final merged file size:</strong> 0.00 MB</p>
 
-<h1>EPG Merge Status</h1>
+    <h2>Channels Found</h2>
+    <table>
+        <tr><th>Channel Name</th></tr>
+        <!-- Found channels will be dynamically added here -->
+    </table>
 
-<div class="summary">
-    <p><strong>Last updated:</strong> <!--LAST_UPDATED--></p>
-    <p><strong>Total channels in master list:</strong> <!--MASTER_LIST_COUNT--></p>
-    <p><strong>Channels kept (matched):</strong> <!--CHANNELS_KEPT--></p>
-    <p><strong>Final merged file size:</strong> <!--MERGED_FILE_SIZE--> MB</p>
-</div>
-
-<h2>Per-Source Parsing Summary</h2>
-<table>
-    <tr>
-        <th>EPG Source URL</th>
-        <th>Channels Parsed</th>
-        <th>Matched to Master List</th>
-    </tr>
-    <!--PER_SOURCE_SUMMARY-->
-</table>
-
-<h2>Logs</h2>
-<button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
-<button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-<div id="logs" class="log" style="display:none;">
-    <!--LOG_DATA-->
-</div>
-
-<h2>Channel Analysis</h2>
-
-<h3>Channels Found (Matched)</h3>
-<table>
-<tr><th>Original Channel</th><th>Normalized</th><th>Matched?</th></tr>
-<!--FOUND_CHANNELS-->
-</table>
-
-<h3>Channels Not Found</h3>
-<table>
-<tr><th>Original Channel</th><th>Normalized</th><th>Matched?</th></tr>
-<!--NOT_FOUND_CHANNELS-->
-</table>
-
+    <h2>Channels Not Found</h2>
+    <table>
+        <tr><th>Channel Name</th></tr>
+        <!-- Not found channels will be dynamically added here -->
+    </table>
 </body>
 </html>
 
