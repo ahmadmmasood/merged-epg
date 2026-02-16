@@ -3,7 +3,6 @@ import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from io import BytesIO
-import os
 
 # ---------------- Sources ----------------
 sources = [
@@ -71,11 +70,15 @@ def fetch_xml_channels(url):
 for url in sources:
     log_messages.append(f"Processing {url}...")
     
-    channels = fetch_txt_channels(url)  # Try fetching txt first
-    if not channels:  # Fallback to XML if no txt found
+    # Try fetching txt file first
+    channels = fetch_txt_channels(url)
+    
+    # If txt fetch fails, try fetching XML
+    if not channels:
         root = fetch_xml_channels(url)
         if root is None:
-            continue
+            continue  # Skip to next URL if XML parsing fails
+
         channels = [ch.find('display-name').text.strip() for ch in root.findall('channel')]
 
     # Process channels
@@ -89,7 +92,7 @@ for url in sources:
             if channel_name not in all_channels:
                 all_channels[channel_name] = channel_name  # Use name as unique identifier
 
-    # Process programs (only if root is defined and XML file is being processed)
+    # Process programs if XML root is defined (only for XML files)
     if root:
         for pr in root.findall('programme'):
             pr_title_el = pr.find('title')
