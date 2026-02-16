@@ -1,9 +1,8 @@
 import os
-import gzip
 import pytz
 import requests
 from datetime import datetime
-import xml.etree.ElementTree as ET
+from epg_handler import fetch_and_parse_epg, normalize_channel_name
 
 # Function to load the master channels
 def load_master_channels(file_path):
@@ -11,62 +10,6 @@ def load_master_channels(file_path):
         channels = f.readlines()
     channels = [line.strip() for line in channels if line.strip() and not line.startswith("#")]
     return channels
-
-# Normalize the channel name
-def normalize_channel_name(channel_name):
-    # Remove suffixes like .us2, .hd, .hdtv, .us_locals1, .pacific, .west, .east
-    suffixes = ['.us2', '.hd', '.hdtv', '.us_locals1', '.pacific', '.west', '.east']
-    for suffix in suffixes:
-        if channel_name.endswith(suffix):
-            channel_name = channel_name.replace(suffix, "")
-    
-    # Remove unwanted words like 'pacific' or 'west' in region context
-    if "pacific" in channel_name.lower() or "west" in channel_name.lower():
-        return None
-    
-    # Remove extra dots and make the name cleaner
-    channel_name = channel_name.replace('.', ' ').strip()
-
-    # Keep numbers in case of channels like 'HBO 2'
-    return channel_name
-
-# Function to parse XML files and extract channel names
-def parse_xml(epg_content):
-    try:
-        tree = ET.ElementTree(ET.fromstring(epg_content))
-        root = tree.getroot()
-
-        # Get all channels
-        channels = []
-        for channel in root.findall("channel"):
-            display_name = channel.find("display-name")
-            if display_name is not None:
-                channels.append(display_name.text.strip())
-        return channels
-    except ET.ParseError as e:
-        print(f"Error parsing XML content: {e}")
-        return []
-
-# Function to fetch and parse EPG content from a URL
-def fetch_and_parse_epg(url):
-    print(f"Trying to fetch {url}")
-    try:
-        if url.endswith(".txt"):
-            response = requests.get(url)
-            response.raise_for_status()
-            print(f"Successfully fetched TXT file from {url}")
-            return response.text.splitlines()
-        elif url.endswith(".xml.gz"):
-            response = requests.get(url)
-            response.raise_for_status()
-            with gzip.open(response.content, 'rb') as f:
-                return parse_xml(f.read().decode("utf-8"))
-        else:
-            print(f"Unsupported URL type: {url}")
-            return []
-    except Exception as e:
-        print(f"Error fetching content from {url}: {e}")
-        return []
 
 # Function to update the index.html page with status and analysis
 def update_index_page(channels_count, programs_count, file_size, log_data, found_channels, not_found_channels, master_channels):
@@ -124,17 +67,11 @@ def main():
     master_channels = load_master_channels("master_channels.txt")
     print(f"Loaded {len(master_channels)} channels from master list.")
     
-    epg_sources = [
-        "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
-        "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
-        "https://iptv-epg.org/files/epg-eg.xml.gz",
-        "https://iptv-epg.org/files/epg-in.xml.gz",
-        "https://iptv-epg.org/files/epg-lb.xml.gz",
-        "https://www.open-epg.com/files/egypt1.xml.gz",
-        "https://www.open-epg.com/files/egypt2.xml.gz",
-        "https://www.open-epg.com/files/india3.xml.gz"
-    ]
-
+    # Read the list of EPG sources from a file
+    epg_sources = []
+    with open("epg_sources.txt", "r") as f:
+        epg_sources = [line.strip() for line in f.readlines() if line.strip()]
+    
     found_channels = []
     not_found_channels = []
     log_data = []
