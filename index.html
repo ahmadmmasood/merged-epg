@@ -4,40 +4,49 @@
     <meta charset="UTF-8">
     <title>EPG Merge Status</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #fafafa; margin: 20px; }
-        h1 { color: #333; }
-        table { border-collapse: collapse; width: 100%; max-width: 700px; margin-bottom: 20px; font-size: 14px; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2 { margin-bottom: 5px; }
+        p { margin: 2px 0; }
+        table { border-collapse: collapse; width: 100%; max-width: 700px; font-size: 14px; }
+        th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
         th { background-color: #f2f2f2; }
-        tr.found { background-color: #d4edda; }
-        tr.notfound { background-color: #f8d7da; }
-        .summary { margin-bottom: 20px; }
+        .found { background-color: #d4edda; }
+        .notfound { background-color: #f8d7da; }
+        button { margin: 5px 0; padding: 5px 10px; }
+        .container { margin-bottom: 20px; }
     </style>
 </head>
 <body>
-
-<h1>EPG Merge Status</h1>
-
-<div class="summary">
-    <p><strong>Last updated:</strong> --</p>
+    <h1>EPG Merge Status</h1>
+    <p><strong>Last updated:</strong> 2026-02-16 14:02:47</p>
     <p><strong>Total channels in master list:</strong> 0</p>
     <p><strong>Channels found:</strong> 0</p>
     <p><strong>Channels not found:</strong> 0</p>
     <p><strong>Final merged file size:</strong> 0.00 MB</p>
-</div>
 
-<h2>Channels Found</h2>
-<table>
-    <tr><th>Channel Name</th></tr>
-    <!-- Dynamically filled after merge_epg.py runs -->
-</table>
+    <div class="container">
+        <h2>Channels Found</h2>
+        <button onclick="document.getElementById('found').style.display='block'">Show Found</button>
+        <button onclick="document.getElementById('found').style.display='none'">Hide Found</button>
+        <div id="found" style="display:none;">
+            <table>
+                <tr><th>Channel Name</th></tr>
+                <!-- Populated dynamically from merge_epg.py -->
+            </table>
+        </div>
+    </div>
 
-<h2>Channels Not Found</h2>
-<table>
-    <tr><th>Channel Name</th></tr>
-    <!-- Dynamically filled after merge_epg.py runs -->
-</table>
-
+    <div class="container">
+        <h2>Channels Not Found</h2>
+        <button onclick="document.getElementById('notfound').style.display='block'">Show Not Found</button>
+        <button onclick="document.getElementById('notfound').style.display='none'">Hide Not Found</button>
+        <div id="notfound" style="display:none;">
+            <table>
+                <tr><th>Channel Name</th></tr>
+                <!-- Populated dynamically from merge_epg.py -->
+            </table>
+        </div>
+    </div>
 </body>
 </html>
 
