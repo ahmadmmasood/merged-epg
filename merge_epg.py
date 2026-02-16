@@ -5,10 +5,10 @@ import os
 from datetime import datetime
 import pytz
 
-# Define your master list channel names (to be used for matching)
+# Load the master list of channels
 def load_master_list():
-    # Read the channels from the master file
     with open("master_channels.txt", "r") as f:
+        # Read in all channels, ignoring lines that start with "#" and making the matching case-insensitive
         master_channels = [line.strip().lower() for line in f if line.strip() and not line.startswith("#")]
     return master_channels
 
@@ -87,7 +87,19 @@ def update_index_page(channels_count, programs_count, file_size, log_data, analy
     <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
     <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
     <div id="logs" style="display:none;">
-        <pre>{log_data}</pre>
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>Source URL</th>
+                    <th>File Type</th>
+                    <th>Status</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {log_data}
+            </tbody>
+        </table>
     </div>
 
     <h2>Channel Analysis:</h2>
@@ -139,13 +151,13 @@ def main():
 
             # Update count of found channels
             found_channels += len(found)
-            total_logs.append(f"Processing {url} ({file_type.upper()}) - Found {len(found)} channels")
+            total_logs.append(f"<tr><td>{url}</td><td>{file_type.upper()}</td><td>Success</td><td>Found {len(found)} channels</td></tr>")
             
             # To calculate programs found, extend this part
             found_programs += len(found)  # Placeholder; replace with actual program extraction if needed
 
         else:
-            total_logs.append(f"Error processing {url}")
+            total_logs.append(f"<tr><td>{url}</td><td>Unknown</td><td>Error</td><td>Failed to fetch or parse</td></tr>")
     
     # Generate channel analysis text
     analysis_data = f"""
