@@ -1,34 +1,46 @@
-from datetime import datetime
-import pytz
-import os
+<html>
+<head><title>EPG Merge Status</title></head>
+<body>
+<h1>EPG Merge Status</h1>
+<p><strong>Last updated:</strong> 2026-02-16 14:02:47</p>
+<p><strong>Channels kept:</strong> 72</p>
+<p><strong>Programs kept:</strong> 72</p>
+<p><strong>Final merged file size:</strong> 37.00 MB</p>
 
-def update_index_page(channels_count, programs_count, file_size, log_data):
-    # Set timezone to Eastern Time
-    eastern = pytz.timezone('US/Eastern')
-    last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
+<h2>Logs:</h2>
+<button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
+<button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
+<div id="logs" style="display:none;">
+    <pre>Source URL: https://epgshare01.online/epgshare01/epg_ripper_US2.txt
+    File Type: TXT
+    Status: Success
+    Details: Found 53 channels</pre>
+</div>
 
-    # Prepare the HTML content
-    html_content = f"""
-    <html>
-    <head><title>EPG Merge Status</title></head>
-    <body>
-    <h1>EPG Merge Status</h1>
-    <p><strong>Last updated:</strong> {last_updated}</p>
-    <p><strong>Channels kept:</strong> {channels_count}</p>
-    <p><strong>Programs kept:</strong> {programs_count}</p>
-    <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
-    <h2>Logs:</h2>
-    <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
-    <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-    <div id="logs" style="display:none;">
-        <pre>{log_data}</pre>
-    </div>
-    </body>
-    </html>
-    """
+<h2>Channel Analysis:</h2>
+<button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
+<button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
+<div id="analysis" style="display:none;">
+    <p><strong>Total Channels in Master List:</strong> 229</p>
+    <p><strong>Channels Found:</strong> 72</p>
+    <p><strong>Channels Not Found:</strong> 183</p>
 
-    # Write the content to the index.html file
-    with open("index.html", "w") as file:
-        file.write(html_content)
-    print("index.html has been updated.")
+    <h3>Channels Found:</h3>
+    <table border="1">
+    <tr><th>Channel Name</th></tr>
+    <tr><td>amc</td></tr>
+    <tr><td>bet</td></tr>
+    <tr><td>bravo</td></tr>
+    </table>
+
+    <h3>Channels Not Found:</h3>
+    <table border="1">
+    <tr><th>Channel Name</th></tr>
+    <tr><td>mgm+</td></tr>
+    <tr><td>hbo</td></tr>
+    </table>
+</div>
+
+</body>
+</html>
 
