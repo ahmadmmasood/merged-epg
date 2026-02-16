@@ -18,7 +18,7 @@ epg_sources = [
     "https://www.open-epg.com/files/india3.xml.gz"
 ]
 
-# Load channels from the master list file
+# Load channels from the master list file, skipping lines that start with #
 def load_channels_from_master_list(file_path):
     channels = []
     with open(file_path, 'r') as f:
@@ -34,12 +34,20 @@ def fetch_and_parse_epg(url):
         response = requests.get(url)
         response.raise_for_status()
 
-        if url.endswith('.gz'):
-            with gzip.GzipFile(fileobj=response.content) as f:
-                file_content = f.read().decode('utf-8')
+        # If the URL contains "epgshare01", try the .txt file first
+        if "epgshare01" in url:
+            txt_url = url.replace(".xml.gz", ".txt")  # Replace .xml.gz with .txt
+            txt_response = requests.get(txt_url)
+            if txt_response.status_code == 200:
+                file_content = txt_response.text
+                print(f"Successfully fetched TXT file from {txt_url}")
+            else:
+                print(f"TXT file not available, falling back to XML: {url}")
+                file_content = gzip.decompress(response.content).decode('utf-8')
         else:
-            file_content = response.text
-
+            # If not epgshare01, always process the .xml.gz file
+            file_content = gzip.decompress(response.content).decode('utf-8')
+        
         return file_content
     except requests.exceptions.RequestException as e:
         print(f"Error fetching/parsing {url}: {e}")
