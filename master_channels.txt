@@ -1,6 +1,6 @@
-=========================
-PREMIUM TIER
-=========================
+#=========================
+#PREMIUM TIER
+#=========================
 MGM+
 MGM+ Hits
 MGM+ Drive-In
@@ -59,9 +59,9 @@ IndiePlex
 MoviePlex
 RetroPlex
 
-=========================
-BASIC / EXPANDED BASIC
-=========================
+#=========================
+#BASIC / EXPANDED BASIC
+#=========================
 A&E
 AMC
 Animal Planet
@@ -157,9 +157,9 @@ VH1
 Vice TV
 WE tv
 
-=========================
-LOCAL CHANNELS – DC / BALTIMORE OTA
-=========================
+#=========================
+#LOCAL CHANNELS – DC / BALTIMORE OTA
+#=========================
 WRC-HD
 COZI TV
 CRIMES
@@ -226,9 +226,9 @@ HSN
 AltaVsn
 DEFY
 
-=========================
-REGIONAL NETWORKS – DC / BALTIMORE
-=========================
+#=========================
+#REGIONAL NETWORKS – DC / BALTIMORE
+#=========================
 MASN (Mid-Atlantic Sports Network)
 NBC Sports Washington
 Comcast SportsNet Mid-Atlantic
@@ -243,9 +243,9 @@ Maryland Lottery / Lottery TV feed
 DC Public Access Channels
 Baltimore Public Access Channels
 
-=========================
-FOREIGN TIER
-=========================
+#=========================
+#FOREIGN TIER
+#=========================
 # Egyptian Channels
 Al Ahram TV
 Al Hayat TV

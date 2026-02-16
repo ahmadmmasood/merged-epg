@@ -1,157 +1,129 @@
-import os
-import gzip
 import requests
-from datetime import datetime
+import gzip
+import xml.etree.ElementTree as ET
 import pytz
+from datetime import datetime
+import os
 
-# Read channels from the master list file
-def load_master_channels(file_path):
-    try:
-        with open(file_path, 'r') as file:
-            channels = [line.strip().lower() for line in file.readlines() if line.strip()]
-        return channels
-    except Exception as e:
-        print(f"Error reading master channels list: {e}")
-        return []
+# Define the EPG sources and master channel list path
+epg_sources = [
+    "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
+    "https://www.open-epg.com/files/unitedstates10.xml.gz",
+    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+    "https://iptv-epg.org/files/epg-eg.xml.gz",
+    "https://iptv-epg.org/files/epg-in.xml.gz",
+    "https://iptv-epg.org/files/epg-lb.xml.gz",
+    "https://www.open-epg.com/files/egypt1.xml.gz",
+    "https://www.open-epg.com/files/egypt2.xml.gz",
+    "https://www.open-epg.com/files/india3.xml.gz"
+]
 
-# Parse the XML or TXT EPG files
-def parse_epg_file(file_url):
+# Load channels from the master list file
+def load_channels_from_master_list(file_path):
+    channels = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            # Ignore lines that are either comments or section headers (lines starting with "#")
+            if line.strip() and not line.startswith("#"):
+                channels.append(line.strip().lower())  # Add lowercase version for case-insensitivity
+    return channels
+
+# Fetch and parse an XML or TXT EPG source
+def fetch_and_parse_epg(url):
     try:
-        # Get the file from the URL
-        response = requests.get(file_url)
+        response = requests.get(url)
         response.raise_for_status()
 
-        # Check if the file is gzipped
-        if file_url.endswith('.gz'):
-            content = gzip.decompress(response.content).decode('utf-8')
+        if url.endswith('.gz'):
+            with gzip.GzipFile(fileobj=response.content) as f:
+                file_content = f.read().decode('utf-8')
         else:
-            content = response.text
+            file_content = response.text
 
-        return content
-    except Exception as e:
-        print(f"Error fetching or parsing file {file_url}: {e}")
-        return ""
+        return file_content
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching/parsing {url}: {e}")
+        return None
 
-# Extract channels and programs from the EPG data
-def extract_channels_and_programs(epg_data, master_channels):
-    channels_found = set()
-    programs_found = set()
+# Parse XML and search for the channels from the master list
+def parse_xml(epg_content, channels):
+    found_channels = []
+    tree = ET.ElementTree(ET.fromstring(epg_content))
+    root = tree.getroot()
 
-    # Process each line in the EPG data
-    for line in epg_data.splitlines():
-        line = line.strip().lower()
+    for channel in root.iter('channel'):
+        channel_name = channel.find('display-name').text.strip().lower()
+        if channel_name in channels:
+            found_channels.append(channel_name)
+    
+    return found_channels
 
-        # Check for matching channels based on master list
-        for channel in master_channels:
-            if channel in line:
-                channels_found.add(channel)
+# Generate the HTML index page with dynamic stats
+def update_index_page(channels_count, programs_count, file_size, found_channels, total_channels):
+    # Calculate missing channels
+    missing_channels = [ch for ch in total_channels if ch not in found_channels]
+    # Set timezone to Eastern Time
+    eastern = pytz.timezone('US/Eastern')
+    last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Assuming the line contains program data (simple example)
-        if "<title>" in line:
-            programs_found.add(line)
+    # Prepare HTML content
+    html_content = f"""
+    <html>
+    <head><title>EPG Merge Status</title></head>
+    <body>
+    <h1>EPG Merge Status</h1>
+    <p><strong>Last updated:</strong> {last_updated}</p>
+    <p><strong>Channels kept:</strong> {channels_count}</p>
+    <p><strong>Programs kept:</strong> {programs_count}</p>
+    <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
 
-    return channels_found, programs_found
+    <h2>Logs:</h2>
+    <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
+    <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
+    <div id="logs" style="display:none;">
+        <pre>{str(epg_sources)}</pre>
+    </div>
 
-# Update the index.html with dynamic content
-def update_index_page(channels_count, programs_count, file_size, log_data, master_channels, channels_found):
-    try:
-        # Set timezone to Eastern Time
-        eastern = pytz.timezone('US/Eastern')
-        last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
+    <h2>Channel Analysis:</h2>
+    <button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
+    <button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
+    <div id="analysis" style="display:none;">
+        <pre>
+        Total Channels in Master List: {len(total_channels)}
+        Channels Found: {len(found_channels)}
+        Channels Not Found: {len(missing_channels)}
+        </pre>
+    </div>
+    </body>
+    </html>
+    """
+    # Write the content to the index.html file
+    with open("index.html", "w") as file:
+        file.write(html_content)
+    print("index.html has been updated.")
 
-        # Calculate channels found and not found
-        channels_not_found = set(master_channels) - channels_found
-        channels_found_count = len(channels_found)
-        channels_not_found_count = len(channels_not_found)
-        total_channels_count = len(master_channels)
+# Main process
+def main():
+    total_channels = load_channels_from_master_list('master_channels.txt')  # Load the channels from the master list
+    found_channels = []
+    total_programs = 0
+    total_file_size = 0
 
-        # Prepare the HTML content with dynamic data
-        html_content = f"""
-        <html>
-        <head><title>EPG Merge Status</title></head>
-        <body>
-        <h1>EPG Merge Status</h1>
-        <p><strong>Last updated:</strong> {last_updated}</p>
-        <p><strong>Channels kept:</strong> {channels_count}</p>
-        <p><strong>Programs kept:</strong> {programs_count}</p>
-        <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
+    for url in epg_sources:
+        print(f"Processing {url}...")
+        epg_content = fetch_and_parse_epg(url)
+        if epg_content:
+            if url.endswith('.xml.gz'):
+                found = parse_xml(epg_content, total_channels)
+                found_channels.extend(found)
+                total_file_size += len(epg_content) / 1024 / 1024  # Convert bytes to MB
 
-        <h2>Analysis:</h2>
-        <p><strong>Total Channels in Master List:</strong> {total_channels_count}</p>
-        <p><strong>Channels Found in EPG Files:</strong> {channels_found_count}</p>
-        <p><strong>Channels Not Found:</strong> {channels_not_found_count}</p>
-        <button onclick="document.getElementById('analysis').style.display='block'">Show Analysis</button>
-        <button onclick="document.getElementById('analysis').style.display='none'">Hide Analysis</button>
-        <div id="analysis" style="display:none;">
-            <h3>Channels Not Found:</h3>
-            <ul>
-            {"".join([f"<li>{ch}</li>" for ch in channels_not_found])}
-            </ul>
-        </div>
+    # Remove duplicates from found_channels
+    found_channels = list(set(found_channels))
 
-        <h2>Logs:</h2>
-        <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
-        <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-        <div id="logs" style="display:none;">
-            <pre>{log_data}</pre>
-        </div>
-        </body>
-        </html>
-        """
-        
-        # Ensure the correct path for the file
-        index_file_path = "index.html"
+    # Update index page with stats
+    update_index_page(len(found_channels), total_programs, total_file_size, found_channels, total_channels)
 
-        # Write the content to the index.html file
-        with open(index_file_path, "w") as file:
-            file.write(html_content)
-
-        print(f"{index_file_path} has been updated.")
-    except Exception as e:
-        print(f"Error updating index page: {e}")
-
-# Main function to drive the process
-def merge_epg():
-    # Load master channels from the text file
-    master_channels = load_master_channels('master_channels.txt')
-
-    if not master_channels:
-        print("No master channels found. Exiting.")
-        return
-
-    # List of EPG file URLs (both XML and TXT)
-    epg_urls = [
-        "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-        "https://www.open-epg.com/files/unitedstates10.xml.gz",
-        "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-        "https://iptv-epg.org/files/epg-eg.xml.gz",
-        "https://iptv-epg.org/files/epg-in.xml.gz",
-        "https://www.open-epg.com/files/egypt1.xml.gz",
-        "https://www.open-epg.com/files/egypt2.xml.gz",
-        "https://www.open-epg.com/files/india3.xml.gz",
-        "https://www.open-epg.com/files/unitedstates10.xml.gz"
-    ]
-
-    channels_found = set()
-    programs_found = set()
-    log_data = ""
-
-    # Process each EPG file
-    for epg_url in epg_urls:
-        print(f"Processing: {epg_url}")
-        epg_data = parse_epg_file(epg_url)
-        if epg_data:
-            found_channels, found_programs = extract_channels_and_programs(epg_data, master_channels)
-            channels_found.update(found_channels)
-            programs_found.update(found_programs)
-            log_data += f"Processed {epg_url} - Found {len(found_channels)} channels and {len(found_programs)} programs.\n"
-
-    # Calculate the merged file size (simplified for now, you can calculate this more accurately if needed)
-    merged_file_size = len(channels_found) * 0.1  # Just a placeholder for the size in MB
-
-    # Update the index page with the results
-    update_index_page(len(channels_found), len(programs_found), merged_file_size, log_data, master_channels, channels_found)
-
-# Run the merge process
-merge_epg()
+if __name__ == "__main__":
+    main()
 
