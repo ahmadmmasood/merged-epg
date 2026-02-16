@@ -1,116 +1,53 @@
 import os
-import re
-import xml.etree.ElementTree as ET
-import requests
 import gzip
-from io import BytesIO
-from datetime import datetime
 import pytz
+import requests
+from datetime import datetime
+import xml.etree.ElementTree as ET
 
-
-# Load master channel list (adjust this to your file location)
+# Function to load the master channels
 def load_master_channels(file_path):
-    master_channels = []
+    with open(file_path, "r") as f:
+        channels = f.readlines()
+    channels = [line.strip() for line in channels if line.strip() and not line.startswith("#")]
+    return channels
+
+# Function to parse XML files
+def parse_xml(epg_content):
     try:
-        with open(file_path, "r") as file:
-            for line in file:
-                # Strip whitespace and ignore lines starting with #
-                if line.strip() and not line.startswith('#'):
-                    master_channels.append(normalize_channel_name(line.strip()))
-    except Exception as e:
-        print(f"Error loading master channels: {e}")
-    return master_channels
+        tree = ET.ElementTree(ET.fromstring(epg_content))
+        root = tree.getroot()
+        return [channel.find("display-name").text for channel in root.findall("channel")]
+    except ET.ParseError:
+        print(f"Error parsing XML content.")
+        return []
 
-
-# Normalize channel names (strip unwanted suffixes and regions)
-def normalize_channel_name(channel_name):
-    # Remove unwanted suffixes and variations
-    suffixes_to_remove = [
-        'hd', 'hdtv', 'us2', 'us_locals1', 'pacific', 'west', 'east', 'tv', 'channel', 'network'
-    ]
-    channel_name = channel_name.lower()  # Case-insensitive matching
-    for suffix in suffixes_to_remove:
-        # Remove suffixes except numbers (e.g. don't remove "HBO 2")
-        channel_name = re.sub(f'(\.{suffix})$', '', channel_name)
-    # Remove any remaining '.' in the name
-    channel_name = re.sub(r'\.', ' ', channel_name)
-    # Remove "hd" or "hdtv" from the end, but not in the middle
-    channel_name = re.sub(r'(hd|hdtv)\s*$', '', channel_name)
-    return channel_name.strip()
-
-
-# Fetch and parse EPG data
+# Function to fetch and parse EPG content from a URL
 def fetch_and_parse_epg(url):
     print(f"Trying to fetch {url}")
-    if url.endswith('.txt'):
-        return fetch_txt_data(url)
-    elif url.endswith('.xml.gz'):
-        return fetch_xml_data(url)
-    else:
-        print(f"Unsupported file format: {url}")
-        return []
-
-
-def fetch_txt_data(url):
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        content = response.text
-        channels = parse_txt_data(content)
-        return channels
-    except Exception as e:
-        print(f"Error fetching/parsing TXT file: {e}")
-        return []
-
-
-def fetch_xml_data(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        
-        # If the content is gzipped, handle it properly
-        if url.endswith('.gz'):
-            with gzip.GzipFile(fileobj=BytesIO(response.content)) as f:
-                content = f.read().decode('utf-8')
+        if url.endswith(".txt"):
+            response = requests.get(url)
+            response.raise_for_status()
+            print(f"Successfully fetched TXT file from {url}")
+            return response.text.splitlines()
+        elif url.endswith(".xml.gz"):
+            response = requests.get(url)
+            response.raise_for_status()
+            with gzip.open(response.content, 'rb') as f:
+                return parse_xml(f.read().decode("utf-8"))
         else:
-            content = response.text
-
-        return parse_xml_data(content)
+            print(f"Unsupported URL type: {url}")
+            return []
     except Exception as e:
-        print(f"Error fetching/parsing XML file: {e}")
+        print(f"Error fetching content from {url}: {e}")
         return []
 
-
-def parse_txt_data(content):
-    channels = []
-    lines = content.splitlines()
-    for line in lines:
-        if not line.startswith('#') and len(line.strip()) > 0:
-            normalized_name = normalize_channel_name(line)
-            channels.append(normalized_name)
-    return channels
-
-
-def parse_xml_data(content):
-    channels = []
-    try:
-        root = ET.fromstring(content)
-        for channel in root.findall('.//channel'):
-            name = channel.find('display-name').text
-            if name:
-                normalized_name = normalize_channel_name(name)
-                channels.append(normalized_name)
-    except ET.ParseError as e:
-        print(f"Error parsing XML content: {e}")
-    return channels
-
-
-# Update the index page with the latest data
-def update_index_page(channels_count, programs_count, file_size, log_data, found_channels, not_found_channels):
+# Function to update the index.html page with status and analysis
+def update_index_page(channels_count, programs_count, file_size, log_data, found_channels, not_found_channels, master_channels):
     eastern = pytz.timezone('US/Eastern')
     last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
-    # Prepare the HTML content
     html_content = f"""
     <html>
     <head><title>EPG Merge Status</title></head>
@@ -156,31 +93,12 @@ def update_index_page(channels_count, programs_count, file_size, log_data, found
         file.write(html_content)
     print("index.html has been updated.")
 
-
-# Save merged EPG data to a file (this would be where you save the merged XML or TXT)
-def save_merged_data(merged_data, filename):
-    try:
-        with gzip.GzipFile(filename, 'w') as f:
-            f.write(merged_data.encode('utf-8'))
-        print(f"File saved as {filename}")
-    except Exception as e:
-        print(f"Error saving merged data: {e}")
-
-
-# Calculate the final file size of the merged file
-def get_file_size(filename):
-    try:
-        return os.path.getsize(filename) / (1024 * 1024)  # Size in MB
-    except Exception as e:
-        print(f"Error getting file size: {e}")
-        return 0
-
-
-# Main function
+# Main function to execute the merge process
 def main():
-    # Load your master list of channels from a file (e.g., master_channels.txt)
-    master_channels = load_master_channels('master_channels.txt')
-
+    # Load the master channels
+    master_channels = load_master_channels("master_channels.txt")
+    print(f"Loaded {len(master_channels)} channels from master list.")
+    
     epg_sources = [
         "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
         "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
@@ -191,39 +109,40 @@ def main():
         "https://www.open-epg.com/files/egypt2.xml.gz",
         "https://www.open-epg.com/files/india3.xml.gz"
     ]
-    
-    total_channels = []
+
     found_channels = []
     not_found_channels = []
     log_data = []
+    total_programs = 0
 
-    # Iterate through each URL and fetch the data
+    # Process each EPG source
     for url in epg_sources:
-        channels = fetch_and_parse_epg(url)
-        log_data.append(f"Processing {url} - Found {len(channels)} channels")
-        total_channels.extend(channels)
+        epg_content = fetch_and_parse_epg(url)
+        if epg_content:
+            for channel in epg_content:
+                # Normalize the channel name here
+                normalized_channel = normalize_channel_name(channel)
+                
+                if normalized_channel in master_channels:
+                    found_channels.append(normalized_channel)
+                else:
+                    not_found_channels.append(normalized_channel)
 
-    # Identify channels found and not found
-    found_channels = [channel for channel in total_channels if channel in master_channels]
-    not_found_channels = [channel for channel in master_channels if channel not in total_channels]
+        log_data.append(f"Processed {url} - Found {len(epg_content)} channels")
 
-    # Save the merged data (example: save it as merged_epg.xml.gz)
-    merged_data = "Merged EPG data here..."  # This would be your merged data as a string
-    save_merged_data(merged_data, "merged_epg.xml.gz")
+    # Calculate the merged file size (just an example; replace with actual logic)
+    final_merged_file_size = os.path.getsize("merged_epg.xml.gz") / (1024 * 1024) if os.path.exists("merged_epg.xml.gz") else 0
 
-    # Get the final merged file size
-    file_size = get_file_size("merged_epg.xml.gz")
-
-    # Prepare index page content
+    # Update the index page with the status
     update_index_page(
         channels_count=len(found_channels),
-        programs_count=0,  # Add your logic to count programs
-        file_size=file_size,  # Actual file size of the merged file
+        programs_count=total_programs,
+        file_size=final_merged_file_size,
         log_data="\n".join(log_data),
         found_channels=found_channels,
-        not_found_channels=not_found_channels
+        not_found_channels=not_found_channels,
+        master_channels=master_channels
     )
-
 
 if __name__ == "__main__":
     main()
