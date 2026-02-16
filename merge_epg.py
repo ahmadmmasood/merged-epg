@@ -1,4 +1,5 @@
 import os
+import re
 import pytz
 import requests
 import gzip
@@ -13,7 +14,25 @@ from datetime import datetime
 def normalize_channel_name(name):
     if not name:
         return None
-    return name.strip().lower()
+
+    name = name.lower().strip()
+
+    # Remove suffixes like .us2, .locals1 etc.
+    name = re.sub(r"\.(us\d+|locals\d+)$", "", name)
+
+    # Replace dots with spaces
+    name = name.replace(".", " ")
+
+    # Remove HD / HDTV
+    name = re.sub(r"\b(hd|hdtv)\b", "", name)
+
+    # Remove west/pacific feeds (keep east implicitly)
+    name = re.sub(r"\b(pacific|west)\b", "", name)
+
+    # Remove extra spaces
+    name = re.sub(r"\s+", " ", name).strip()
+
+    return name
 
 
 # ==========================
@@ -40,7 +59,6 @@ def fetch_and_parse_epg(url):
             root = etree.fromstring(content, parser=parser)
 
             if root is None:
-                print(f"Invalid XML structure in {url}")
                 return []
 
             channels = []
@@ -51,7 +69,6 @@ def fetch_and_parse_epg(url):
                     if normalized:
                         channels.append(normalized)
 
-            print(f"Parsed {len(channels)} XML channels from {url}")
             return channels
 
         # ==========================
@@ -66,11 +83,9 @@ def fetch_and_parse_epg(url):
 
             for line in lines:
                 line = line.strip()
-
                 if not line or line.startswith("#"):
                     continue
 
-                # If CSV-style, take first column
                 if "," in line:
                     channel_name = line.split(",")[0]
                 else:
@@ -80,11 +95,9 @@ def fetch_and_parse_epg(url):
                 if normalized:
                     channels.append(normalized)
 
-            print(f"Parsed {len(channels)} TXT channels from {url}")
             return channels
 
         else:
-            print(f"Unsupported file type: {url}")
             return []
 
     except Exception as e:
@@ -155,15 +168,12 @@ def update_index_page(channels_count, programs_count, file_size,
     </table>
 
 </div>
-
 </body>
 </html>
 """
 
     with open("index.html", "w", encoding="utf-8") as file:
         file.write(html_content)
-
-    print("index.html has been updated.")
 
 
 # ==========================
@@ -172,36 +182,31 @@ def update_index_page(channels_count, programs_count, file_size,
 def main():
 
     master_channels = set(load_master_channels("master_channels.txt"))
-    print(f"Loaded {len(master_channels)} channels from master list.")
 
     with open("epg_sources.txt", "r", encoding="utf-8") as f:
         epg_sources = [line.strip() for line in f if line.strip()]
 
     all_parsed_channels = set()
-    log_data = []
-    total_programs = 0  # Placeholder for future merge logic
+    log_lines = []
+    total_programs = 0
 
-    # ==========================
-    # PARSE ALL SOURCES
-    # ==========================
     for url in epg_sources:
         epg_channels = fetch_and_parse_epg(url)
+        parsed_count = len(epg_channels)
+
+        matched_count = 0
 
         for channel in epg_channels:
             all_parsed_channels.add(channel)
+            if channel in master_channels:
+                matched_count += 1
 
-        log_data.append(
-            f"Processed {url} - Parsed {len(epg_channels)} channels"
+        log_lines.append(
+            f"Processed {url} - Parsed {parsed_count} channels - Matched {matched_count} master channels"
         )
 
-    # ==========================
-    # COMPARE AGAINST MASTER
-    # ==========================
     found_channels = master_channels.intersection(all_parsed_channels)
     not_found_channels = master_channels.difference(all_parsed_channels)
-
-    print(f"Master channels found: {len(found_channels)}")
-    print(f"Master channels missing: {len(not_found_channels)}")
 
     final_file = "merged_epg.xml.gz"
     final_size = (
@@ -214,7 +219,7 @@ def main():
         channels_count=len(found_channels),
         programs_count=total_programs,
         file_size=final_size,
-        log_data="\n".join(log_data),
+        log_data="\n".join(log_lines),
         found_channels=found_channels,
         not_found_channels=not_found_channels,
         master_channels=master_channels
