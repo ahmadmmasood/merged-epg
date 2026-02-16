@@ -12,6 +12,24 @@ def load_master_channels(file_path):
     channels = [line.strip() for line in channels if line.strip() and not line.startswith("#")]
     return channels
 
+# Normalize the channel name
+def normalize_channel_name(channel_name):
+    # Remove suffixes like .us2, .hd, .us_locals1
+    suffixes = ['.us2', '.hd', '.hdtv', '.us_locals1', '.pacific', '.west', '.east']
+    for suffix in suffixes:
+        if channel_name.endswith(suffix):
+            channel_name = channel_name.replace(suffix, "")
+    
+    # Remove unwanted words like 'pacific' or 'west' in region context
+    if "pacific" in channel_name.lower() or "west" in channel_name.lower():
+        return None
+    
+    # Remove extra dots and make the name cleaner
+    channel_name = channel_name.replace('.', ' ').strip()
+
+    # Keep numbers in case of channels like 'HBO 2'
+    return channel_name
+
 # Function to parse XML files
 def parse_xml(epg_content):
     try:
