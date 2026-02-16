@@ -1,117 +1,165 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import gzip
 import requests
 import xml.etree.ElementTree as ET
+from pathlib import Path
+from datetime import datetime
 
 # ---------------- CONFIG ----------------
-FEEDS = [
-    # US
-    "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
-    # Egypt / Lebanon / India
-    "https://iptv-epg.org/files/epg-eg.xml.gz",
-    "https://www.open-epg.com/files/egypt1.xml.gz",
-    "https://www.open-epg.com/files/egypt2.xml.gz",
-    "https://iptv-epg.org/files/epg-lb.xml.gz",
-    "https://iptv-epg.org/files/epg-in.xml.gz",
-    "https://www.open-epg.com/files/india3.xml.gz",
-]
+MERGED_FILE = Path("merged.xml.gz")
 
-OUTPUT_FILE = "merged.xml.gz"
+# ---------------- URL SOURCES ----------------
+urls = {
+    # Local DC channels
+    "us_locals": "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
 
-# ---------------- CHANNEL FILTERS ----------------
-# Channels to always include (Indian feed)
-INDIAN_CHANNELS = [
+    # US East + misc
+    "us_main": [
+        "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
+        "https://www.open-epg.com/files/unitedstates10.xml.gz"
+    ],
+
+    # Foreign
+    "egypt": [
+        "https://iptv-epg.org/files/epg-eg.xml.gz",
+        "https://www.open-epg.com/files/egypt1.xml.gz",
+        "https://www.open-epg.com/files/egypt2.xml.gz"
+    ],
+    "lebanon": ["https://iptv-epg.org/files/epg-lb.xml.gz"],
+    "india": [
+        "https://iptv-epg.org/files/epg-in.xml.gz",
+        "https://www.open-epg.com/files/india3.xml.gz"
+    ]
+}
+
+# ---------------- SEARCH CHANNELS ----------------
+search_channels = [
     # ---------------- Indian ----------------
-    # Star Network
-    "star plus",
-    "star bharat",
-    "star gold",
-    "star sports",
-
-    # Zee Network
-    "zee tv",
-    "zee cinema",
-    "zee news",
-
-    # Sony Network
-    "sony entertainment",
-    "sony sab",
-    "sony max",
-
-    # Colors / Viacom
-    "colors",
-    "colors cineplex",
+    "star plus", "star bharat", "star gold", "star sports",
+    "zee tv", "zee cinema", "zee news",
+    "sony entertainment", "sony sab", "sony max",
+    "colors", "colors cineplex",
 ]
 
-# Channels to keep from US feeds
-def keep_us_channel(name):
-    name_lower = name.lower()
-    if "west" in name_lower:
+# ---------------- US Merge Rules ----------------
+def is_us_channel_valid(channel_name: str) -> bool:
+    lower = channel_name.lower()
+    if "west" in lower:
         return False
-    if "east" in name_lower or ("east" not in name_lower and "west" not in name_lower):
+    if "east" in lower or ("east" not in lower and "west" not in lower):
         return True
     return False
 
-# ---------------- FUNCTIONS ----------------
-def fetch_feed(url):
-    print(f"Fetching: {url}")
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    return gzip.decompress(r.content)
+# ---------------- UTIL FUNCTIONS ----------------
+def fetch_xml_gz(url):
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    return gzip.decompress(resp.content)
 
-def parse_feed(data):
-    return ET.fromstring(data)
+def parse_xml(content):
+    return ET.fromstring(content)
 
-def merge_feeds(feeds):
-    merged_channels = {}
-    merged_programs = []
+# ---------------- MERGE PROCESS ----------------
+all_channels = {}
+all_programs = []
 
-    for feed_url in feeds:
-        data = fetch_feed(feed_url)
-        root = parse_feed(data)
+def merge_feed(content, is_us_feed=False, is_local_feed=False):
+    root = parse_xml(content)
+    # Channels
+    for ch in root.findall("channel"):
+        ch_id = ch.attrib.get("id")
+        ch_name = ch.findtext("display-name", "").strip()
+        if not ch_id or not ch_name:
+            continue
 
-        for ch in root.findall("channel"):
-            ch_id = ch.attrib.get("id")
-            ch_name = ch.findtext("display-name", "").lower()
+        # Local feed: keep all exactly
+        if is_local_feed:
+            all_channels[ch_id] = ch
+            continue
 
-            if feed_url.endswith("US_LOCALS1.xml.gz"):
-                # always keep all locals
-                keep = True
-            elif feed_url in [FEEDS[0], FEEDS[1]]:  # US feeds
-                keep = keep_us_channel(ch_name)
-            else:  # foreign feeds
-                keep = ch_name in INDIAN_CHANNELS or "mbc" in ch_name or "nogoum" in ch_name or "aghani" in ch_name
+        # US feed rules
+        if is_us_feed and not is_us_channel_valid(ch_name):
+            continue
 
-            if keep and ch_id not in merged_channels:
-                merged_channels[ch_id] = ch
+        # Foreign: keep only if in search list
+        if not is_us_feed and not is_local_feed:
+            if ch_name.lower() not in search_channels:
+                continue
 
-        for prog in root.findall("programme"):
-            ch_id = prog.attrib.get("channel")
-            if ch_id in merged_channels:
-                merged_programs.append(prog)
+        # Avoid duplicates
+        if ch_id not in all_channels:
+            all_channels[ch_id] = ch
 
-    return merged_channels, merged_programs
+    # Programs
+    for prg in root.findall("programme"):
+        ch_id = prg.attrib.get("channel")
+        if not ch_id or ch_id not in all_channels:
+            continue
+        # Avoid duplicates based on channel + start + title
+        prg_id = (
+            ch_id,
+            prg.attrib.get("start", ""),
+            prg.findtext("title", "").strip()
+        )
+        if prg_id not in all_programs:
+            all_programs.append(prg_id)
+            # Attach element for writing
+            all_channels.setdefault("_programs", []).append(prg)
 
-def write_merged_file(channels, programs, output_file):
-    root = ET.Element("tv")
-    for ch in channels.values():
-        root.append(ch)
-    for prog in programs:
-        root.append(prog)
+# ---------------- FETCH AND MERGE ----------------
+# Local feed: must include all
+local_content = fetch_xml_gz(urls["us_locals"])
+merge_feed(local_content, is_local_feed=True)
 
-    tree = ET.ElementTree(root)
-    xml_bytes = ET.tostring(root, encoding="utf-8")
-    with gzip.open(output_file, "wb") as f:
-        f.write(xml_bytes)
-    print(f"Final merged file written: {output_file}")
-    print(f"Channels kept: {len(channels)}")
-    print(f"Programs kept: {len(programs)}")
-    print(f"Approx size: {len(xml_bytes) / 1024 / 1024:.2f} MB")
+# US feeds: combine with rules
+for url in urls["us_main"]:
+    content = fetch_xml_gz(url)
+    merge_feed(content, is_us_feed=True)
 
-# ---------------- MAIN ----------------
-if __name__ == "__main__":
-    merged_channels, merged_programs = merge_feeds(FEEDS)
-    write_merged_file(merged_channels, merged_programs, OUTPUT_FILE)
+# Foreign feeds
+for country, feed_urls in urls.items():
+    if country in ("us_locals", "us_main"):
+        continue
+    for url in feed_urls:
+        content = fetch_xml_gz(url)
+        merge_feed(content)
+
+# ---------------- WRITE MERGED FILE ----------------
+root_elem = ET.Element("tv")
+
+# Channels
+for ch_id, ch_elem in all_channels.items():
+    if ch_id == "_programs":
+        continue
+    root_elem.append(ch_elem)
+
+# Programs
+for ch_id in all_channels:
+    for prg in all_channels.get("_programs", []):
+        root_elem.append(prg)
+
+# Write gzipped XML
+MERGED_FILE.write_bytes(gzip.compress(ET.tostring(root_elem, encoding="utf-8")))
+
+# ---------------- UPDATE INDEX ----------------
+INDEX_FILE = Path("index.html")
+index_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EPG Merge Status</title>
+</head>
+<body>
+<h2>EPG Merge Status</h2>
+<p><strong>Last updated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+<p><strong>Channels kept:</strong> {len(all_channels) - 1 if "_programs" in all_channels else len(all_channels)}</p>
+<p><strong>Programs kept:</strong> {len(all_programs)}</p>
+</body>
+</html>
+"""
+
+INDEX_FILE.write_text(index_content, encoding="utf-8")
+print(f"Merged EPG written to {MERGED_FILE}, index.html updated")
 
