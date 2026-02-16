@@ -5,6 +5,7 @@ import requests
 from datetime import datetime
 import pytz
 import xml.etree.ElementTree as ET
+import re
 
 # --------------------------
 # Helper: normalize channel
@@ -12,27 +13,29 @@ import xml.etree.ElementTree as ET
 def normalize_channel_name(name):
     if not name:
         return None
-    name = name.replace(".us2", "").replace(".us_locals1", "")
-    name = name.replace(".xml.gz", "")
-    name = name.replace("-", " ").replace(".", " ")
-    name = name.replace("hd", "").replace("dt", "").replace("tv", "")
-    # Skip channels with West/Pacific
-    if "west" in name.lower() or "pacific" in name.lower():
-        return None
-    name = name.strip()
+    # remove suffixes
+    name = re.sub(r'\.(us2|us_locals1|xml\.gz)$', '', name, flags=re.I)
+    # replace dots and symbols
+    name = name.replace(".", " ").replace("-", " ").replace("(", " ").replace(")", " ")
+    # remove HD, SD, DT, TV, Pacific/West
+    name = re.sub(r'\b(HD|SD|DT|TV|pacific|west)\b', '', name, flags=re.I)
+    # remove extra symbols + / :
+    name = re.sub(r'[^\w\s]', '', name)
+    name = name.lower().strip()
+    # reduce multiple spaces to one
+    name = re.sub(r'\s+', ' ', name)
     return name if name else None
 
 # --------------------------
 # Fetch EPG and parse channels
 # --------------------------
 def fetch_and_parse_epg(url):
-    print(f"Fetching {url}")
     try:
+        print(f"Fetching {url}")
         resp = requests.get(url, timeout=60)
         resp.raise_for_status()
         content = resp.content
 
-        # Handle gzipped XML
         if url.endswith(".gz"):
             temp_gz = "temp_epg.gz"
             with open(temp_gz, "wb") as f:
@@ -46,11 +49,9 @@ def fetch_and_parse_epg(url):
             os.remove("temp_epg.xml")
             return channels
 
-        # Handle plain TXT or other text files
         elif url.endswith(".txt"):
             return [line.strip() for line in content.decode("utf-8", errors="ignore").splitlines() if line.strip()]
 
-        # Try XML if not gz
         else:
             tree = ET.ElementTree(ET.fromstring(content))
             root = tree.getroot()
@@ -143,35 +144,29 @@ def main():
 
     found_channels = []
 
-    # Process each EPG source
     for url in epg_sources:
         parsed_channels = fetch_and_parse_epg(url)
         print(f"Processed {url} - Parsed {len(parsed_channels)} channels")
 
         for ch in parsed_channels:
-            normalized = normalize_channel_name(ch)
-            if not normalized:
+            normalized_ch = normalize_channel_name(ch)
+            if not normalized_ch:
                 continue
 
-            # Match against master list
+            # flexible matching: either contains or is contained
             for master in master_channels:
-                master_norm = normalize_channel_name(master)
-                if not master_norm:
+                normalized_master = normalize_channel_name(master)
+                if not normalized_master:
                     continue
-                if normalized.lower() == master_norm.lower() or normalized.lower().startswith(master_norm.lower()):
+                if (normalized_master in normalized_ch) or (normalized_ch in normalized_master):
                     if master not in found_channels:
                         found_channels.append(master)
                     break
 
-    # Channels not found are those in master list but missing in found
     not_found_channels = [ch for ch in master_channels if ch not in found_channels]
 
-    # Use the real merged_epg.xml.gz if it exists
     merged_file_path = "merged_epg.xml.gz"
-    if os.path.exists(merged_file_path):
-        final_file_size = os.path.getsize(merged_file_path) / (1024*1024)
-    else:
-        final_file_size = 0.0
+    final_file_size = os.path.getsize(merged_file_path) / (1024*1024) if os.path.exists(merged_file_path) else 0.0
 
     print(f"Final merged file size: {final_file_size:.2f} MB")
     update_index_page(found_channels, not_found_channels, master_channels, final_file_size)
