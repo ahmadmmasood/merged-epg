@@ -1,6 +1,5 @@
-name: Merge EPG Daily
+name: EPG Merge Daily
 
-# Trigger workflow
 on:
   push:
     branches:
@@ -40,10 +39,10 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      # 6️⃣ Commit & push changes
+      # 6️⃣ Commit and push changes (including index.html)
       - name: Commit and push changes
         run: |
-          git add merged.xml.gz index.html merge_epg.py
-          git commit -m "Auto-update merged EPG with local + important channels" || echo "No changes to commit"
+          git add index.html merged.xml.gz merge_epg.py
+          git commit -m "Auto-update index.html and merged EPG"
           git push origin main
 
