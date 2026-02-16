@@ -5,6 +5,19 @@ import requests
 from datetime import datetime
 import pytz
 
+# Load master channel list (adjust this to your file location)
+def load_master_channels(file_path):
+    master_channels = []
+    try:
+        with open(file_path, "r") as file:
+            for line in file:
+                # Strip whitespace and ignore lines starting with #
+                if line.strip() and not line.startswith('#'):
+                    master_channels.append(normalize_channel_name(line.strip()))
+    except Exception as e:
+        print(f"Error loading master channels: {e}")
+    return master_channels
+
 
 # Normalize channel names (strip unwanted suffixes and regions)
 def normalize_channel_name(channel_name):
@@ -136,6 +149,9 @@ def update_index_page(channels_count, programs_count, file_size, log_data, found
 
 # Main function
 def main():
+    # Load your master list of channels from a file (e.g., master_channels.txt)
+    master_channels = load_master_channels('master_channels.txt')
+
     epg_sources = [
         "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
         "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
@@ -160,7 +176,7 @@ def main():
 
     # Identify channels found and not found
     for channel in total_channels:
-        if channel in master_channels:  # Assumes `master_channels` is a list from your master file
+        if channel in master_channels:  # Compare with the master list
             found_channels.append(channel)
         else:
             not_found_channels.append(channel)
