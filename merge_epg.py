@@ -1,15 +1,17 @@
-import gzip
 import requests
-import pytz
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from io import BytesIO
+import gzip
+import pytz
 
-# ---------------- Sources ----------------
+# ---------------- Define sources ----------------
 sources = [
-    "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+    # US feeds (text files)
+    "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
+    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
+
+    # Foreign feeds (xml.gz)
     "https://iptv-epg.org/files/epg-eg.xml.gz",
     "https://www.open-epg.com/files/egypt1.xml.gz",
     "https://www.open-epg.com/files/egypt2.xml.gz",
@@ -18,114 +20,121 @@ sources = [
     "https://iptv-epg.org/files/epg-lb.xml.gz"
 ]
 
-# ---------------- Indian Channels ----------------
-indian_channels = [
-    "b4u balle balle", "b4u movies", "9x jalwa", "9x", "mtv india", "zee tv", "zee cinema", "zee news"
+# ---------------- Define channels ----------------
+local_channels = [
+    "WRC-HD", "COZI", "CRIMES", "Oxygen", "WTTG-DT", "BUZZR", "START", "WJLA", "Charge!",
+    "Comet", "ROAR", "WUSA-HD", "Crime", "Quest", "NEST", "QVC", "WBAL-DT", "MeTV", "Story",
+    "GetTV", "QVC", "WFDC-DT", "getTV", "GRIT", "UniMas", "WDCA", "MOVIES", "HEROES", "FOXWX",
+    "MPT-HD", "MPT-2", "MPTKIDS", "NHK-WLD", "WDVM-SD", "WETA-HD", "WETA UK", "KIDS", "WORLD",
+    "METRO", "WHUT", "PBSKids", "WZDC", "XITOS", "WDCW-DT", "Antenna", "CWWNUV", "Comet", "TheNest",
+    "ION", "Bounce", "CourtTV", "Laff", "IONPlus", "BUSTED", "GameSho", "HSN", "AltaVsn", "DEFY"
 ]
 
-# ---------------- US East / Local Rules ----------------
+# ---------------- Define valid channel filters ----------------
 def keep_us_channel(channel_name):
+    """Only keep East Coast channels and no duplicates"""
     name_lower = channel_name.lower()
-    # Keep local feed channels always
     if "us_locals1" in channel_name.lower():
         return True
-    # Keep "East" channels or ones with neither "East" nor "West"
-    return "east" in name_lower or ("east" not in name_lower and "west" not in name_lower)
+    return "east" in name_lower and "west" not in name_lower
+
+def is_valid_foreign_channel(channel_name):
+    """Check if the channel is in one of the allowed foreign categories"""
+    allowed_foreign_channels = [
+        "b4u", "zee", "sony", "colors", "egypt", "lebanon"
+    ]
+    return any(channel.lower() in channel_name.lower() for channel in allowed_foreign_channels)
 
 # ---------------- Fetch and parse XML ----------------
-all_channels = {}
-all_programs = {}
-log_output = ""
-
-# Fetch channels and programs
-for url in sources:
+def fetch_channels_and_programs(url):
     try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        content = gzip.decompress(r.content)
-        tree = ET.parse(BytesIO(content))
-        root = tree.getroot()
-
-        # Process channels
-        for ch in root.findall('channel'):
-            ch_id = ch.get('id')
-            ch_name_el = ch.find('display-name')
-            if ch_id and ch_name_el is not None:
-                ch_name = ch_name_el.text.strip().lower()
-                if any(channel in ch_name for channel in indian_channels):
-                    if ch_id not in all_channels:
-                        all_channels[ch_id] = ET.tostring(ch, encoding='unicode')
-
-        # Process programs
-        for pr in root.findall('programme'):
-            pr_channel = pr.get('channel')
-            pr_title_el = pr.find('title')
-            if pr_title_el is not None:
-                pr_title = pr_title_el.text.strip()
-                pr_id = f"{pr_channel}_{pr_title}"
-                if pr_id not in all_programs:
-                    all_programs[pr_id] = ET.tostring(pr, encoding='unicode')
-
+        if url.endswith(".txt"):
+            # For .txt files, we use a much faster method (direct parsing)
+            response = requests.get(url)
+            response.raise_for_status()
+            # Process the channel list directly from text
+            channels = response.text.splitlines()
+            return channels, []
+        elif url.endswith(".xml.gz"):
+            # For .xml.gz files, we use XML parsing
+            response = requests.get(url)
+            response.raise_for_status()
+            content = gzip.decompress(response.content)
+            tree = ET.ElementTree(ET.fromstring(content))
+            root = tree.getroot()
+            channels = []
+            programs = []
+            for ch in root.findall('channel'):
+                ch_name = ch.find('display-name').text if ch.find('display-name') is not None else ''
+                ch_id = ch.get('id')
+                if keep_us_channel(ch_name) or is_valid_foreign_channel(ch_name):
+                    channels.append((ch_id, ch_name))
+            for pr in root.findall('programme'):
+                programs.append(pr)
+            return channels, programs
+        return [], []
     except Exception as e:
-        log_output += f"Error fetching/parsing {url}: {e}\n"
+        print(f"Error fetching/parsing {url}: {e}")
+        return [], []
 
 # ---------------- Build final XML ----------------
-root = ET.Element("tv")
+def build_final_xml(channels, programs):
+    root = ET.Element("tv")
+    for ch_id, ch_name in channels:
+        ch_elem = ET.SubElement(root, "channel", id=ch_id)
+        ET.SubElement(ch_elem, "display-name").text = ch_name
+    for pr in programs:
+        root.append(pr)
+    return ET.tostring(root, encoding='utf-8')
 
-# Add channels
-for ch_xml in all_channels.values():
-    root.append(ET.fromstring(ch_xml))
+# ---------------- Main execution ----------------
+channels_all = []
+programs_all = []
 
-# Add programs
-for pr_xml in all_programs.values():
-    root.append(ET.fromstring(pr_xml))
+# Fetch and parse channels
+for url in sources:
+    channels, programs = fetch_channels_and_programs(url)
+    channels_all.extend(channels)
+    programs_all.extend(programs)
 
-final_xml = ET.tostring(root, encoding='utf-8')
+# Remove duplicates
+channels_all = list(set(channels_all))
 
-# ---------------- Write to merged file ----------------
-merged_file = "merged.xml.gz"
-with gzip.open(merged_file, "wb") as f:
+# Generate final XML
+final_xml = build_final_xml(channels_all, programs_all)
+
+# Write the merged EPG file
+with gzip.open('merged.xml.gz', 'wb') as f:
     f.write(final_xml)
 
 # ---------------- Stats ----------------
-eastern_time = pytz.timezone('US/Eastern')
-timestamp = datetime.now(eastern_time).strftime("%Y-%m-%d %H:%M:%S %Z")
-channels_count = len(all_channels)
-programs_count = len(all_programs)
+timestamp = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d %H:%M:%S %Z")
+channels_count = len(channels_all)
+programs_count = len(programs_all)
 file_size_mb = round(len(final_xml) / (1024 * 1024), 2)
 
-log_output += f"\nEPG Merge Status\n"
-log_output += f"Last updated: {timestamp}\n"
-log_output += f"Channels kept: {channels_count}\n"
-log_output += f"Programs kept: {programs_count}\n"
-log_output += f"Final merged file size: {file_size_mb} MB\n"
-
-# ---------------- Update index.html ----------------
-index_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
+# Update index.html with stats and logs
+with open('index.html', 'w') as f:
+    f.write(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
     <title>EPG Merge Status</title>
     <meta charset="UTF-8">
-</head>
-<body>
+    </head>
+    <body>
     <h1>EPG Merge Status</h1>
     <p><strong>Last updated:</strong> {timestamp}</p>
     <p><strong>Channels kept:</strong> {channels_count}</p>
     <p><strong>Programs kept:</strong> {programs_count}</p>
     <p><strong>Final merged file size:</strong> {file_size_mb} MB</p>
-    <h3>Logs:</h3>
-    <details>
-        <summary>Show Logs</summary>
-        <pre>{log_output}</pre>
-    </details>
-</body>
-</html>
-"""
-
-# Save index.html
-with open("index.html", "w") as f:
-    f.write(index_content)
-
-print(f"Updated index.html with timestamp: {timestamp}")
+    <p><strong>Logs:</strong></p>
+    <button onclick="document.getElementById('log').style.display='block'">Show Logs</button>
+    <div id="log" style="display:none; background-color:#f4f4f4; padding:10px;">
+    Processing completed with {channels_count} channels and {programs_count} programs.
+    <button onclick="document.getElementById('log').style.display='none'">Close</button>
+    </div>
+    </body>
+    </html>
+    """)
 
