@@ -41,17 +41,19 @@ def fetch_and_parse_epg(url):
             if txt_response.status_code == 200:
                 file_content = txt_response.text
                 print(f"Successfully fetched TXT file from {txt_url}")
+                return file_content, 'txt'  # Return the content and indicate it's a .txt file
             else:
                 print(f"TXT file not available, falling back to XML: {url}")
                 file_content = gzip.decompress(response.content).decode('utf-8')
+                return file_content, 'xml'  # Return content and indicate it's an .xml file
         else:
             # If not epgshare01, always process the .xml.gz file
             file_content = gzip.decompress(response.content).decode('utf-8')
+            return file_content, 'xml'  # Indicate it's an .xml file
         
-        return file_content
     except requests.exceptions.RequestException as e:
         print(f"Error fetching/parsing {url}: {e}")
-        return None
+        return None, None
 
 # Parse XML and search for the channels from the master list
 def parse_xml(epg_content, channels):
@@ -64,6 +66,16 @@ def parse_xml(epg_content, channels):
         if channel_name in channels:
             found_channels.append(channel_name)
     
+    return found_channels
+
+# Process TXT files: Extract channels directly from the TXT file (assuming it's a list of channel names)
+def parse_txt(epg_content, channels):
+    found_channels = []
+    for line in epg_content.splitlines():
+        # Assuming the .txt file has one channel name per line
+        channel_name = line.strip().lower()
+        if channel_name in channels:
+            found_channels.append(channel_name)
     return found_channels
 
 # Generate the HTML index page with dynamic stats
@@ -119,12 +131,17 @@ def main():
 
     for url in epg_sources:
         print(f"Processing {url}...")
-        epg_content = fetch_and_parse_epg(url)
+        epg_content, file_type = fetch_and_parse_epg(url)
         if epg_content:
-            if url.endswith('.xml.gz'):
+            if file_type == 'xml':
                 found = parse_xml(epg_content, total_channels)
-                found_channels.extend(found)
-                total_file_size += len(epg_content) / 1024 / 1024  # Convert bytes to MB
+            elif file_type == 'txt':
+                found = parse_txt(epg_content, total_channels)
+            else:
+                continue
+
+            found_channels.extend(found)
+            total_file_size += len(epg_content) / 1024 / 1024  # Convert bytes to MB
 
     # Remove duplicates from found_channels
     found_channels = list(set(found_channels))
