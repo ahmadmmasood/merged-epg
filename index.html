@@ -1,30 +1,34 @@
+from datetime import datetime
+import pytz
+import os
 
-<html>
-<head><title>EPG Merge Status</title></head>
-<body>
-<h1>EPG Merge Status</h1>
-<p><strong>Last updated:</strong> 2026-02-16 15:20:07 </p>
-<p><strong>Channels kept:</strong> 7428</p>
-<p><strong>Programs kept:</strong> 249645</p>
-<p><strong>Final merged file size:</strong> 204.21 MB</p>
-<h2>Logs:</h2>
-<button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
-<button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
-<div id="logs" style="display:none;">
-    <pre>Processing XML: https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz
-Processing XML: https://www.open-epg.com/files/unitedstates10.xml.gz
-Processing XML: https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz
-Error fetching/parsing https://iptv-epg.org/files/epg-eg.xml.gz: 'NoneType' object has no attribute 'strip'
-Processing XML: https://www.open-epg.com/files/egypt1.xml.gz
-Processing XML: https://www.open-epg.com/files/egypt2.xml.gz
-Processing XML: https://iptv-epg.org/files/epg-in.xml.gz
-Processing XML: https://www.open-epg.com/files/india3.xml.gz
-Error fetching/parsing https://iptv-epg.org/files/epg-lb.xml.gz: 'NoneType' object has no attribute 'strip'
-EPG Merge Status
-Last updated: 2026-02-16 15:20:07 
-Channels kept: 7428
-Programs kept: 249645
-Final merged file size: 204.21 MB</pre>
-</div>
-</body>
-</html>
+def update_index_page(channels_count, programs_count, file_size, log_data):
+    # Set timezone to Eastern Time
+    eastern = pytz.timezone('US/Eastern')
+    last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
+
+    # Prepare the HTML content
+    html_content = f"""
+    <html>
+    <head><title>EPG Merge Status</title></head>
+    <body>
+    <h1>EPG Merge Status</h1>
+    <p><strong>Last updated:</strong> {last_updated}</p>
+    <p><strong>Channels kept:</strong> {channels_count}</p>
+    <p><strong>Programs kept:</strong> {programs_count}</p>
+    <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
+    <h2>Logs:</h2>
+    <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
+    <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
+    <div id="logs" style="display:none;">
+        <pre>{log_data}</pre>
+    </div>
+    </body>
+    </html>
+    """
+
+    # Write the content to the index.html file
+    with open("index.html", "w") as file:
+        file.write(html_content)
+    print("index.html has been updated.")
+

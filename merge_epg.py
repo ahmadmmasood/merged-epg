@@ -1,79 +1,61 @@
-import gzip
-import xml.etree.ElementTree as ET
 import os
+from datetime import datetime
+import pytz
+import gzip
+import shutil
 
-# Function to read channels from the master_channels.txt file
-def read_channels_from_file(file_path):
-    channels = {
-        "premium": [],
-        "basic": [],
-        "local": [],
-        "regional": [],
-        "foreign": []  # This will handle the Foreign Tier
-    }
-    current_category = None
+def update_index_page(channels_count, programs_count, file_size, log_data):
+    # Set timezone to Eastern Time
+    eastern = pytz.timezone('US/Eastern')
+    last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
-    with open(file_path, "r") as file:
-        for line in file:
-            line = line.strip()
-            if "PREMIUM TIER" in line:
-                current_category = "premium"
-            elif "BASIC / EXPANDED BASIC" in line:
-                current_category = "basic"
-            elif "LOCAL CHANNELS" in line:
-                current_category = "local"
-            elif "REGIONAL NETWORKS" in line:
-                current_category = "regional"
-            elif "FOREIGN TIER" in line:
-                current_category = "foreign"
-            elif line and not line.startswith("="):
-                channels[current_category].append(line)
+    # Prepare the HTML content
+    html_content = f"""
+    <html>
+    <head><title>EPG Merge Status</title></head>
+    <body>
+    <h1>EPG Merge Status</h1>
+    <p><strong>Last updated:</strong> {last_updated}</p>
+    <p><strong>Channels kept:</strong> {channels_count}</p>
+    <p><strong>Programs kept:</strong> {programs_count}</p>
+    <p><strong>Final merged file size:</strong> {file_size:.2f} MB</p>
+    <h2>Logs:</h2>
+    <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
+    <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
+    <div id="logs" style="display:none;">
+        <pre>{log_data}</pre>
+    </div>
+    </body>
+    </html>
+    """
 
-    return channels
+    # Write the content to the index.html file
+    with open("index.html", "w") as file:
+        file.write(html_content)
+    print("index.html has been updated.")
 
-# File path to the master channel list
-channels_file = "master_channels.txt"
+def process_epg_data():
+    # Sample data for this example (replace with actual merging logic)
+    channels_all = ['Channel 1', 'Channel 2', 'Channel 3']  # Replace with actual channels list
+    programs_all = ['Program 1', 'Program 2', 'Program 3']  # Replace with actual programs list
 
-# Read channels from file
-channels = read_channels_from_file(channels_file)
+    # Write merged data to merged.xml.gz (assuming you generate the XML)
+    merged_file = 'merged.xml.gz'
+    with gzip.open(merged_file, 'wt') as f:
+        # Replace this with actual merging logic
+        f.write("<channels><channel><name>Example Channel</name></channel></channels>")  # Example XML content
 
-# Filter out any channels that mention "Pacific" or are considered West Coast channels
-def filter_west_coast(channels):
-    return {category: [ch for ch in channel_list if "Pacific" not in ch] for category, channel_list in channels.items()}
+    # Calculate counts and file size
+    channels_count = len(channels_all)
+    programs_count = len(programs_all)
+    file_size = os.path.getsize(merged_file) / (1024 * 1024)  # File size in MB
 
-channels = filter_west_coast(channels)
+    # Capture logs (you can format logs as needed)
+    log_data = "Processing complete. No errors."  # Example log data, replace with actual logs
 
-# Create the XML structure
-root = ET.Element("channels")
+    # Update the index.html dynamically
+    update_index_page(channels_count, programs_count, file_size, log_data)
 
-# Function to add channels to the XML
-def add_channels(channel_list, tier):
-    for channel in channel_list:
-        channel_element = ET.SubElement(root, "channel")
-        channel_element.set("tier", tier)
-        channel_element.text = channel
-
-# Add all channels to XML structure
-add_channels(channels["premium"], "Premium Tier")
-add_channels(channels["basic"], "Basic Tier")
-add_channels(channels["local"], "Local Channels")
-add_channels(channels["regional"], "Regional Networks")
-add_channels(channels["foreign"], "Foreign Tier")  # Add Foreign Tier channels
-
-# Create the tree and save as XML
-tree = ET.ElementTree(root)
-
-# Save XML as .xml file
-xml_filename = "channels.xml"
-tree.write(xml_filename)
-
-# Compress the XML file into .gz
-with open(xml_filename, "rb") as f_in:
-    with gzip.open(f"{xml_filename}.gz", "wb") as f_out:
-        f_out.writelines(f_in)
-
-# Clean up the original XML after gzipping
-os.remove(xml_filename)
-
-print(f"XML file with channels has been created and compressed into {xml_filename}.gz")
+if __name__ == "__main__":
+    process_epg_data()
 
