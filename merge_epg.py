@@ -37,23 +37,24 @@ def fetch_and_parse_epg(url):
         # If the URL contains "epgshare01", try the .txt file first
         if "epgshare01" in url:
             txt_url = url.replace(".xml.gz", ".txt")  # Replace .xml.gz with .txt
+            print(f"Trying to fetch TXT file: {txt_url}")
             txt_response = requests.get(txt_url)
             if txt_response.status_code == 200:
-                file_content = txt_response.text
                 print(f"Successfully fetched TXT file from {txt_url}")
-                return file_content, 'txt'  # Return the content and indicate it's a .txt file
+                file_content = txt_response.text
+                return file_content, 'txt', txt_url  # Return the content and indicate it's a .txt file
             else:
                 print(f"TXT file not available, falling back to XML: {url}")
                 file_content = gzip.decompress(response.content).decode('utf-8')
-                return file_content, 'xml'  # Return content and indicate it's an .xml file
+                return file_content, 'xml', url  # Return content and indicate it's an .xml file
         else:
             # If not epgshare01, always process the .xml.gz file
             file_content = gzip.decompress(response.content).decode('utf-8')
-            return file_content, 'xml'  # Indicate it's an .xml file
+            return file_content, 'xml', url  # Indicate it's an .xml file
         
     except requests.exceptions.RequestException as e:
         print(f"Error fetching/parsing {url}: {e}")
-        return None, None
+        return None, None, None
 
 # Parse XML and search for the channels from the master list
 def parse_xml(epg_content, channels):
@@ -79,7 +80,7 @@ def parse_txt(epg_content, channels):
     return found_channels
 
 # Generate the HTML index page with dynamic stats
-def update_index_page(channels_count, programs_count, file_size, found_channels, total_channels):
+def update_index_page(channels_count, programs_count, file_size, found_channels, total_channels, logs):
     # Calculate missing channels
     missing_channels = [ch for ch in total_channels if ch not in found_channels]
     # Set timezone to Eastern Time
@@ -87,6 +88,8 @@ def update_index_page(channels_count, programs_count, file_size, found_channels,
     last_updated = datetime.now(eastern).strftime('%Y-%m-%d %H:%M:%S')
 
     # Prepare HTML content
+    log_entries = "\n".join([f"<tr><td>{log[0]}</td><td>{log[1]}</td><td>{log[2]}</td><td>{log[3]}</td></tr>" for log in logs])
+
     html_content = f"""
     <html>
     <head><title>EPG Merge Status</title></head>
@@ -101,7 +104,10 @@ def update_index_page(channels_count, programs_count, file_size, found_channels,
     <button onclick="document.getElementById('logs').style.display='block'">Show Logs</button>
     <button onclick="document.getElementById('logs').style.display='none'">Hide Logs</button>
     <div id="logs" style="display:none;">
-        <pre>{str(epg_sources)}</pre>
+        <table border="1">
+            <tr><th>Source URL</th><th>File Type</th><th>Status</th><th>Details</th></tr>
+            {log_entries}
+        </table>
     </div>
 
     <h2>Channel Analysis:</h2>
@@ -128,26 +134,36 @@ def main():
     found_channels = []
     total_programs = 0
     total_file_size = 0
+    logs = []
 
     for url in epg_sources:
         print(f"Processing {url}...")
-        epg_content, file_type = fetch_and_parse_epg(url)
+        epg_content, file_type, source_url = fetch_and_parse_epg(url)
         if epg_content:
             if file_type == 'xml':
+                print("Parsing XML content...")
                 found = parse_xml(epg_content, total_channels)
+                status = "Success"
+                details = f"Found {len(found)} channels"
             elif file_type == 'txt':
+                print("Parsing TXT content...")
                 found = parse_txt(epg_content, total_channels)
+                status = "Success"
+                details = f"Found {len(found)} channels"
             else:
-                continue
+                status = "Failed"
+                details = "No valid content"
+                found = []
 
             found_channels.extend(found)
             total_file_size += len(epg_content) / 1024 / 1024  # Convert bytes to MB
+            logs.append([source_url, file_type.upper(), status, details])
 
     # Remove duplicates from found_channels
     found_channels = list(set(found_channels))
 
     # Update index page with stats
-    update_index_page(len(found_channels), total_programs, total_file_size, found_channels, total_channels)
+    update_index_page(len(found_channels), total_programs, total_file_size, found_channels, total_channels, logs)
 
 if __name__ == "__main__":
     main()
