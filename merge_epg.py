@@ -13,7 +13,28 @@ INDEX_HTML = "index.html"
 # Mapping from raw EPG names to desired final names
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
-    "5.starmax.hd.east.us2": "5starmax"
+    "5.starmax.hd.east.us2": "5starmax",
+    # Manually add the channels you've requested
+    "wjla-dt": "abc",
+    "wdcw-dt": "cd",  # for CW
+    "wttg-dt": "fox",
+    "wdca-dt": "foxplus",
+    "wrc-dt": "nbc",
+    # Starz variants
+    "starz": "starz",
+    "starz.cinema": "starz cinema",
+    "starz.comedy": "starz comedy",
+    "starz.edge": "starz edge",
+    "starz.inblack": "starz inblack",
+    "starz.kids.and.family": "starz kids and family",
+    # Variants of Starz Encore
+    "starz.encore": "starz encore",
+    "starz.encore.action": "starz encore action",
+    "starz.encore.black": "starz encore black",
+    "starz.encore.classic": "starz encore classic",
+    "starz.encore.family": "starz encore family",
+    "starz.encore.suspense": "starz encore suspense",
+    "starz.encore.westerns": "starz encore westerns"
 }
 
 # -----------------------------
@@ -176,24 +197,6 @@ def smart_match(master_channels, parsed_channels):
 
 
 # -----------------------------
-# LOOSE MATCHING FOR UNMATCHED CHANNELS (UNCHANGED)
-# -----------------------------
-
-def loose_match(master_channels, parsed_channels):
-    found = set()
-
-    # Looser match for channels that weren't found in the first pass
-    for master in master_channels:
-        if master not in found:
-            for parsed in parsed_channels:
-                if master in parsed or parsed in master:
-                    found.add(master)
-                    break
-
-    return found
-
-
-# -----------------------------
 # XML CREATION (WITH MANUALLY MATCHED CHANNELS)
 # -----------------------------
 
@@ -207,7 +210,7 @@ def save_merged_xml(channels):
 
     # Add the dynamically matched channels (after excluding "pacific" or "west")
     for ch in sorted(channels):
-        if "pacific" not in ch and "west" not in ch:
+        if "pacific" not in ch and "west" not in ch and "tbs superstation" not in ch:
             ch_elem = ET.SubElement(root, "channel", id=ch)
             ET.SubElement(ch_elem, "display-name").text = ch
 
