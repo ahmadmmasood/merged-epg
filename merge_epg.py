@@ -8,18 +8,42 @@ MASTER_LIST_FILE = "master_channels.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
 INDEX_HTML = "index.html"
 
-epg_sources = [
-    "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
-    "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
-    "https://www.open-epg.com/files/unitedstates10.xml.gz",
-]
+# -----------------------------
+# Load EPG Sources from File
+# -----------------------------
+
+def load_epg_sources(file_path):
+    epg_sources = []
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    epg_sources.append(line)
+    except Exception as e:
+        print(f"Error loading EPG sources from {file_path}: {e}")
+    return epg_sources
+
+
+# Replace the hardcoded list with dynamic loading from epg_sources.txt
+EPG_SOURCES_FILE = "epg_sources.txt"
+epg_sources = load_epg_sources(EPG_SOURCES_FILE)
+
+# Check if the list has been populated correctly
+print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
-# NORMALIZATION (WITH UPDATES)
+# NORMALIZATION (WITH SPECIFIC FIXES AND LOOSER MATCHING)
 # -----------------------------
 
 def clean_text(name):
     name = name.lower()
+
+    # Specific rules to fix known issues
+    if "home and garden television" in name:
+        return "hgtv"
+    if "5 starmax" in name:
+        return "5starmax"
 
     # Remove any periods, "HD", "East", "West"
     name = name.replace(".", " ")
@@ -78,7 +102,7 @@ def parse_txt(content):
 
 
 # -----------------------------
-# PARSE XML (ONLY FIX APPLIED)
+# PARSE XML (UNCHANGED)
 # -----------------------------
 
 def parse_xml(content):
@@ -122,12 +146,13 @@ def load_master_list():
 
 
 # -----------------------------
-# MATCHING (UNCHANGED)
+# MATCHING (INCLUDING LOOSE MATCH FOR UNMATCHED CHANNELS)
 # -----------------------------
 
 def smart_match(master_channels, parsed_channels):
     found = set()
 
+    # Exact match first
     for master in master_channels:
 
         if master in parsed_channels:
@@ -140,6 +165,24 @@ def smart_match(master_channels, parsed_channels):
             if all(word in parsed for word in master_words):
                 found.add(master)
                 break
+
+    return found
+
+
+# -----------------------------
+# LOOSE MATCHING FOR UNMATCHED CHANNELS
+# -----------------------------
+
+def loose_match(master_channels, parsed_channels):
+    found = set()
+
+    # Looser match for channels that weren't found in the first pass
+    for master in master_channels:
+        if master not in found:
+            for parsed in parsed_channels:
+                if master in parsed or parsed in master:
+                    found.add(master)
+                    break
 
     return found
 
@@ -168,7 +211,7 @@ def save_merged_xml(channels):
 
 
 # -----------------------------
-# INDEX UPDATE (UPDATED TITLE)
+# INDEX UPDATE (WITH TITLE FIX)
 # -----------------------------
 
 def update_index(master, found, not_found):
@@ -240,11 +283,19 @@ def main():
         print(f"Processed {url} - Parsed {len(parsed)} channels")
         parsed_all.update(parsed)
 
+    # Step 1: Smart match (exact matching)
     found = smart_match(master, parsed_all)
     not_found = master - found
 
+    # Step 2: Loose match for remaining unmatched channels
+    loose_found = loose_match(not_found, parsed_all)
+
+    # Combine found results
+    all_found = found.union(loose_found)
+
+    # Step 3: Save merged XML and update the index
     save_merged_xml(parsed_all)
-    update_index(master, found, not_found)
+    update_index(master, all_found, not_found)
 
     print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
 
