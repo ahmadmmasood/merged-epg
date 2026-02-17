@@ -13,8 +13,6 @@ EPG_SOURCES_FILE = "epg_sources.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
 INDEX_HTML = "index.html"
 
-LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
-
 # -----------------------------
 # NORMALIZATION
 # -----------------------------
@@ -36,106 +34,16 @@ def clean_text(name):
 # FUZZY MATCHING
 # -----------------------------
 def similar(a, b):
+    """Return similarity ratio between 0 and 1"""
     return SequenceMatcher(None, a, b).ratio()
 
 # -----------------------------
 # ALIASES (Exact raw EPG IDs)
 # -----------------------------
 EPG_ALIASES = {
-    # Premium / specialty
-    "5_starmax": "5StarMax",
-    "outermax": "OuterMax",
-    "moviemax": "MovieMax",
-    "thrillermax": "ThrillerMax",
-    "sho×bet": "SHO×BET",
-    # HBO / Cinemax / Showtime aliases
-    "hbo family": "HBO Family",
-    # Starz / Encore
-    "starz encore family": "Starz Encore Family",
-    "starz encore westerns": "Starz Encore Westerns",
-    "starz inblack": "Starz InBlack",
-    "starz kids and family": "Starz Kids & Family",
-    # Local DC/Baltimore
-    "wbaldt": "WBAL-DT",
-    "wdca-dt": "WDCA-DT",
-    "wdcw-dt": "WDCW-DT",
-    "wdvm-sd": "WDVM-SD",
-    "weta kids": "WETA Kids",
-    "weta uk": "WETA UK",
-    "weta-hd": "WETA-HD",
-    "wfdc-dt": "WFDC-DT",
-    "whut": "WHUT",
-    "wjla-dt": "WJLA-DT",
-    "wjz 13": "WJZ 13 (CBS Baltimore)",
-    "wmar 2": "WMAR 2 (ABC Baltimore)",
-    "wmpb": "WMPB (PBS Maryland)",
-    "wnuv-dt": "WNUV-DT",
-    "wrc-hd": "WRC-HD",
-    "wttg-dt": "WTTG-DT",
-    "wusa-hd": "WUSA-HD",
-    "wzdc": "WZDC",
-    # Other international / specialty
-    "aaj tak": "Aaj Tak",
-    "al ahram tv": "Al Ahram TV",
-    "al hayat tv": "Al Hayat TV",
-    "al masriya tv": "Al Masriya TV",
-    "al nahar tv": "Al Nahar TV",
-    "al jadeed": "Al Jadeed",
-    "altavsn": "AltaVsn",
-    "buzzr": "BUZZR",
-    "bloomberg television": "Bloomberg Television",
-    "cbc": "CBC (Egypt)",
-    "crimes": "CRIMES",
-    "cwwnuv": "CWWNUV",
-    "cartoonito": "Cartoonito",
-    "colors tv": "Colors TV",
-    "comcast sportsnet mid atlantic": "Comcast SportsNet Mid-Atlantic",
-    "crime tv": "Crime TV",
-    "dream tv": "Dream TV",
-    "e!": "E!",
-    "fox sports 1": "Fox Sports 1",
-    "fox sports 2": "Fox Sports 2",
-    "fox weather": "Fox Weather",
-    "future tv": "Future TV",
-    "gettv": "GetTV",
-    "hsn": "HSN",
-    "heroes and icons": "Heroes & Icons",
-    "ion plus": "ION Plus",
-    "lbci": "LBCI",
-    "mpt kids": "MPT Kids",
-    "mpt-2": "MPT-2",
-    "mpt-hd": "MPT-HD",
-    "mtv": "MTV",
-    "mtv lebanon": "MTV Lebanon",
-    "mtv live": "MTV Live",
-    "mtv2": "MTV2",
-    "metv": "MeTV",
-    "metro": "Metro",
-    "nbc sports washington": "NBC Sports Washington",
-    "ndtv": "NDTV",
-    "nhk world japan": "NHK World Japan",
-    "newschannel 8": "NewsChannel 8 (WJLA News)",
-    "nick at nite": "Nick at Nite",
-    "nickmusic": "NickMusic",
-    "nile tv international": "Nile TV International",
-    "otv lebanon": "OTV Lebanon",
-    "oxygen": "Oxygen",
-    "republic tv": "Republic TV",
-    "showtime": "Showtime",
-    "showtime family zone": "Showtime Family Zone",
-    "sony tv": "Sony TV",
-    "star plus": "Star Plus",
-    "story television": "Story Television",
-    "sun tv": "Sun TV",
-    "tcm": "TCM",
-    "tlc": "TLC",
-    "tv9": "TV9",
-    "teennick": "TeenNick",
-    "telexitos": "Telexitos",
-    "the movie channel xtra": "The Movie Channel Xtra",
-    "times now": "Times Now",
-    "travel channel": "Travel Channel",
-    "xitos": "XITOS",
+    "home.and.garden.television.hd.us2": "HGTV",
+    "5.starmax.hd.east.us2": "5StarMax",
+    # add more exact EPG IDs here as needed
 }
 
 # -----------------------------
@@ -162,7 +70,7 @@ def load_epg_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith("#") and line.startswith("http") and line != LOCAL_FEED_URL:
+            if line and not line.startswith("#") and line.startswith("http"):
                 sources.append(line)
     return sources
 
@@ -179,9 +87,9 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE XML STREAM
+# PARSE XML STREAM WITH SMART MATCHING
 # -----------------------------
-def parse_xml_stream(content_bytes, master_cleaned, allowed_master_channels, days_limit=3, local_only=False):
+def parse_xml_stream(content_bytes, master_cleaned, allowed_local_ids=None, days_limit=3):
     allowed_channel_ids = set()
     channel_id_to_display = {}
     programmes = []
@@ -198,34 +106,57 @@ def parse_xml_stream(content_bytes, master_cleaned, allowed_master_channels, day
     context = ET.iterparse(f, events=("end",))
 
     for event, elem in context:
+
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
-            cleaned_display = clean_text(display)
-            canonical_id = raw_id.lower()
+            cleaned = clean_text(display)
             matched = False
 
-            if local_only and cleaned_display not in allowed_master_channels:
+            # Only include local channels from the allowed_local_ids feed
+            if allowed_local_ids is not None and raw_id not in allowed_local_ids:
                 elem.clear()
                 continue
 
-            if canonical_id in EPG_ALIASES:
+            # 1️⃣ Exact-ID alias mapping
+            if raw_id in EPG_ALIASES:
+                allowed_channel_ids.add(raw_id)
+                channel_id_to_display[raw_id] = EPG_ALIASES[raw_id]
                 matched = True
-                channel_id_to_display[canonical_id] = EPG_ALIASES[canonical_id]
-            elif cleaned_display in master_cleaned:
-                matched = True
-                channel_id_to_display[canonical_id] = master_cleaned[cleaned_display]
 
-            if matched:
-                allowed_channel_ids.add(canonical_id)
-            else:
-                unmatched_channels.append((canonical_id, display))
+            # 2️⃣ Exact cleaned master match
+            if not matched and cleaned in master_cleaned:
+                allowed_channel_ids.add(raw_id)
+                channel_id_to_display[raw_id] = master_cleaned[cleaned]
+                matched = True
+
+            # 3️⃣ Substring match
+            if not matched:
+                for master_clean, master_disp in master_cleaned.items():
+                    if master_clean in cleaned or cleaned in master_clean:
+                        allowed_channel_ids.add(raw_id)
+                        channel_id_to_display[raw_id] = master_disp
+                        matched = True
+                        break
+
+            # 4️⃣ Enhanced fuzzy match (0.7 threshold)
+            if not matched:
+                for master_clean, master_disp in master_cleaned.items():
+                    if similar(cleaned, master_clean) >= 0.7 or similar(clean_text(raw_id), master_clean) >= 0.7:
+                        allowed_channel_ids.add(raw_id)
+                        channel_id_to_display[raw_id] = master_disp
+                        matched = True
+                        break
+
+            if not matched:
+                unmatched_channels.append((raw_id, display))
 
             elem.clear()
 
         elif elem.tag == "programme":
-            raw_channel = elem.attrib.get("channel", "").lower()
+            raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
+
             if not raw_channel or not start_str or raw_channel not in allowed_channel_ids:
                 elem.clear()
                 continue
@@ -340,29 +271,36 @@ function toggle(id){{
 # MAIN
 # -----------------------------
 def main():
-    global channel_id_to_display
-    channel_id_to_display = {}
-
     master_cleaned, master_display = load_master_list()
-    allowed_master_channels = set(clean_text(c) for c in master_display)
     sources = load_epg_sources()
 
     all_channel_ids = set()
     all_programmes = []
     matched_display_names = set()
+    channel_id_to_display = {}
 
     print(f"Master channels loaded: {len(master_display)}")
-    print(f"EPG sources loaded: {len(sources) + 1} (including locals feed)")
+    print(f"EPG sources loaded: {len(sources)}")
 
-    # 1️⃣ Process all non-local feeds
+    # Identify the locals1 feed
+    local_feed_url = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
+
     for url in sources:
         print(f"\nProcessing: {url}")
         content = fetch_content(url)
         if not content:
             continue
 
+        allowed_local_ids = None
+        # Only local feed allows all local IDs
+        if url == local_feed_url:
+            allowed_local_ids = None  # allow all channels from this feed
+        else:
+            # Non-local feeds ignore local channels
+            allowed_local_ids = master_cleaned  # keep only master channels
+
         try:
-            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned, allowed_master_channels)
+            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned, allowed_local_ids)
         except ET.ParseError as e:
             print(f"XML parse error in {url}: {e}")
             continue
@@ -370,28 +308,12 @@ def main():
         all_channel_ids.update(channel_ids)
         all_programmes.extend(programmes)
         channel_id_to_display.update(id_to_display)
-        matched_display_names.update(id_to_display.values())
+
+        for disp in id_to_display.values():
+            matched_display_names.add(disp)
 
         print(f"  Channels kept: {len(channel_ids)}")
         print(f"  Programmes kept: {len(programmes)}")
-
-    # 2️⃣ Process local channels only from local feed
-    print(f"\nProcessing local feed: {LOCAL_FEED_URL}")
-    local_content = fetch_content(LOCAL_FEED_URL)
-    if local_content:
-        try:
-            channel_ids, id_to_display, programmes = parse_xml_stream(
-                local_content, master_cleaned, allowed_master_channels, local_only=True
-            )
-        except ET.ParseError as e:
-            print(f"XML parse error in local feed: {e}")
-        else:
-            all_channel_ids.update(channel_ids)
-            all_programmes.extend(programmes)
-            channel_id_to_display.update(id_to_display)
-            matched_display_names.update(id_to_display.values())
-            print(f"  Local channels kept: {len(channel_ids)}")
-            print(f"  Local programmes kept: {len(programmes)}")
 
     save_merged_xml(all_channel_ids, all_programmes, channel_id_to_display)
     update_index(master_display, matched_display_names)
