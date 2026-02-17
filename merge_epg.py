@@ -13,11 +13,6 @@ INDEX_HTML = "index.html"
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
-    "wjla-dt": "abc",
-    "wdcw-dt": "cw",
-    "wttg-dt": "fox",
-    "wdca-dt": "foxplus",
-    "wrc-dt": "nbc",
 }
 
 EPG_SOURCES_FILE = "epg_sources.txt"
