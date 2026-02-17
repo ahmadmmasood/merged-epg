@@ -199,18 +199,29 @@ def save_merged_xml(channels):
             ch_elem = ET.SubElement(root, "channel", id=ch)
             ET.SubElement(ch_elem, "display-name").text = ch
 
-    # Ensure the XML is written properly
+    # Generate XML content and print it to verify it's correct
     tree = ET.ElementTree(root)
-
-    temp_xml = "temp_merged.xml"
+    xml_string = ET.tostring(root, encoding='utf-8', method='xml').decode('utf-8')
+    print("Generated XML Content:")
+    print(xml_string)
 
     # Write XML file in UTF-8 encoding with xml_declaration
+    temp_xml = "temp_merged.xml"
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
+
+    # Check if the XML file is generated properly
+    print(f"XML file saved as {temp_xml}. Check if the content is correct.")
 
     # Compress the XML file to .gz using a more robust method
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
             f_out.writelines(f_in)  # This ensures the file is written properly
+
+    # Check if the .gz file was created successfully
+    if os.path.exists(OUTPUT_XML_GZ):
+        print(f"Compressed file {OUTPUT_XML_GZ} created successfully.")
+    else:
+        print("Error: .gz file creation failed.")
 
     # Clean up the temporary XML file after compression
     os.remove(temp_xml)
