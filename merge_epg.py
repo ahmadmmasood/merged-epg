@@ -3,6 +3,8 @@ import gzip
 import requests
 import xml.etree.ElementTree as ET
 import re
+from datetime import datetime
+import pytz
 
 MASTER_LIST_FILE = "master_channels.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
@@ -211,11 +213,21 @@ def save_merged_xml(channels):
 
 
 # -----------------------------
-# INDEX UPDATE (WITH TITLE FIX)
+# GET EASTERN TIME STAMP
+# -----------------------------
+
+def get_eastern_timestamp():
+    eastern = pytz.timezone("US/Eastern")
+    return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+# -----------------------------
+# INDEX UPDATE (WITH TITLE FIX AND TIMESTAMP)
 # -----------------------------
 
 def update_index(master, found, not_found):
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
+    timestamp = get_eastern_timestamp()
 
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
@@ -241,6 +253,7 @@ function toggle(id){{
 <body>
 
 <h2>EPG Merge Report</h2>
+<p><strong>Report generated on:</strong> {timestamp}</p>
 
 <p>Total channels in master list: {len(master)}</p>
 <p>Channels found: {len(found)} <a href="#" onclick="toggle('found')">(show/hide)</a></p>
