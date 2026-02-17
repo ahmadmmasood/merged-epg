@@ -41,28 +41,40 @@ print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 def clean_text(name):
     name = name.lower()
 
-    # Specific rules to fix known issues
-    if "home and garden television" in name:
+    # ===============================
+    # NEVER CHANGE THIS FINDING LOGIC
+    # ===============================
+    # Explicit match for "home.and.garden.television" to "hgtv"
+    if "home.and.garden.television" in name:
         return "hgtv"
-    if "5 starmax" in name:
+    
+    # Explicit match for "5.starmax" to "5starmax"
+    if "5.starmax" in name:
         return "5starmax"
+    # ===============================
+    # NEVER CHANGE THIS FINDING LOGIC
+    # ===============================
 
-    # Remove any periods, "HD", "East", "West"
+    # Remove periods, "HD", "East", "West", and other irrelevant parts
     name = name.replace(".", " ")
     name = name.replace("hd", "")
     name = name.replace("east", "")
     name = name.replace("west", "")
 
+    # Remove any unwanted directional words or time-zone-related keywords
     if "pacific" in name or "west" in name:
         return None
 
+    # Replace '&' with "and" for matching purposes
     name = name.replace("&", " and ")
     name = name.replace("-", " ")
 
+    # Remove common TV-related words (like 'hd', 'tv', 'channel')
     remove_words = ["hd", "hdtv", "tv", "channel", "network", "east"]
     for word in remove_words:
         name = re.sub(r"\b" + word + r"\b", " ", name)
 
+    # Clean up any remaining non-alphanumeric characters (like punctuation)
     name = re.sub(r"[^\w\s]", " ", name)
     name = re.sub(r"\s+", " ", name)
 
@@ -307,12 +319,6 @@ def main():
     all_found = found.union(loose_found)
 
     # Step 3: Save merged XML and update the index
-    save_merged_xml(parsed_all)
+    save_merged_xml(all_found)
     update_index(master, all_found, not_found)
-
-    print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
-
-
-if __name__ == "__main__":
-    main()
 
