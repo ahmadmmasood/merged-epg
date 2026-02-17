@@ -6,4 +6,4 @@ https://iptv-epg.org/files/epg-lb.xml.gz
 https://www.open-epg.com/files/egypt1.xml.gz
 https://www.open-epg.com/files/egypt2.xml.gz
 https://www.open-epg.com/files/india3.xml.gz
-
+https://epgshare01.online/epgshare01/epg_ripper_ALL_SOURCES1.txt
