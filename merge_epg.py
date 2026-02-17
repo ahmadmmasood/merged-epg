@@ -15,17 +15,22 @@ epg_sources = [
 ]
 
 # -----------------------------
-# NORMALIZATION (UNCHANGED)
+# NORMALIZATION (WITH UPDATES)
 # -----------------------------
 
 def clean_text(name):
     name = name.lower()
 
+    # Remove any periods, "HD", "East", "West"
+    name = name.replace(".", " ")
+    name = name.replace("hd", "")
+    name = name.replace("east", "")
+    name = name.replace("west", "")
+
     if "pacific" in name or "west" in name:
         return None
 
     name = name.replace("&", " and ")
-    name = name.replace(".", " ")
     name = name.replace("-", " ")
 
     remove_words = ["hd", "hdtv", "tv", "channel", "network", "east"]
@@ -163,7 +168,7 @@ def save_merged_xml(channels):
 
 
 # -----------------------------
-# INDEX UPDATE (UNCHANGED)
+# INDEX UPDATE (UPDATED TITLE)
 # -----------------------------
 
 def update_index(master, found, not_found):
@@ -176,7 +181,7 @@ def update_index(master, found, not_found):
 <!DOCTYPE html>
 <html>
 <head>
-<title>iEPG Merge Report</title>
+<title>EPG Merge Report</title>
 <style>
 body {{ font-family: Arial; }}
 table {{ border-collapse: collapse; width: 50%; }}
@@ -192,7 +197,7 @@ function toggle(id){{
 </head>
 <body>
 
-<h2>iEPG Merge Report</h2>
+<h2>EPG Merge Report</h2>
 
 <p>Total channels in master list: {len(master)}</p>
 <p>Channels found: {len(found)} <a href="#" onclick="toggle('found')">(show/hide)</a></p>
