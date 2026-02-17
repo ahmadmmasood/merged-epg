@@ -5,4 +5,3 @@ https://iptv-epg.org/files/epg-eg.xml.gz
 ...
 https://epgshare01.online/epgshare01/epg_ripper_US2.txt
 https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt
-https://epgshare01.online/epgshare01/epg_ripper_ALL_SOURCES1.txt
