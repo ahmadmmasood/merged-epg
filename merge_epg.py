@@ -14,13 +14,11 @@ INDEX_HTML = "index.html"
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
-    # Add any other necessary mappings here...
     "wjla-dt": "abc",
     "wdcw-dt": "cd",  # for CW
     "wttg-dt": "fox",
     "wdca-dt": "foxplus",
     "wrc-dt": "nbc",
-    # Add more mappings as needed
 }
 
 # -----------------------------
@@ -50,7 +48,6 @@ print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 def clean_text(name):
     name = name.lower()
-
     name = name.replace(".", " ")
     name = name.replace("hd", "")
     name = name.replace("east", "")
@@ -85,7 +82,7 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE TXT (UNCHANGED)
+# PARSE TXT (UNCHANGED FOR MATCHING ONLY)
 # -----------------------------
 
 def parse_txt(content):
@@ -104,7 +101,7 @@ def parse_txt(content):
     return channels
 
 # -----------------------------
-# PARSE XML (MODIFIED TO PRESERVE ORIGINAL IDs)
+# PARSE XML (PRESERVE ORIGINAL IDs)
 # -----------------------------
 
 def parse_xml(content):
@@ -125,7 +122,7 @@ def parse_xml(content):
             cleaned = clean_text(display_name)
 
             if cleaned:
-                channels[cleaned] = original_id
+                channels[cleaned] = original_id  # preserve original ID exactly
 
     except Exception as e:
         print(f"Error parsing XML: {e}")
@@ -171,25 +168,24 @@ def smart_match(master_channels, parsed_channels):
     return found
 
 # -----------------------------
-# XML CREATION (MODIFIED TO USE ORIGINAL IDs)
+# XML CREATION (USE ORIGINAL XML IDs + APPLY MAPPINGS)
 # -----------------------------
 
 def save_merged_xml(channels):
     root = ET.Element("tv")
 
-    # Add manually matched channels directly to the merged XML as "found"
-    for epg_name, final_name in EPG_TO_FINAL_NAME.items():
-        ch_elem = ET.SubElement(root, "channel", id=final_name)
-        ET.SubElement(ch_elem, "display-name").text = final_name
-
-    # Add dynamically matched channels using ORIGINAL IDs
     for cleaned_name, original_id in sorted(channels.items()):
+        if not original_id:
+            continue  # skip TXT-only entries
+
         if "pacific" not in cleaned_name and "west" not in cleaned_name and "tbs superstation" not in cleaned_name:
-            ch_elem = ET.SubElement(root, "channel", id=original_id)
+            # Apply manual mapping if defined
+            final_id = EPG_TO_FINAL_NAME.get(original_id, original_id)
+
+            ch_elem = ET.SubElement(root, "channel", id=final_id)
             ET.SubElement(ch_elem, "display-name").text = cleaned_name
 
     tree = ET.ElementTree(root)
-
     temp_xml = "temp_merged.xml"
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
 
@@ -260,7 +256,7 @@ function toggle(id){{
         f.write(html)
 
 # -----------------------------
-# MAIN (MINOR DICT MERGE CHANGE ONLY)
+# MAIN (TXT used only for matching)
 # -----------------------------
 
 def main():
@@ -276,7 +272,8 @@ def main():
         if url.endswith(".txt"):
             parsed = parse_txt(content)
             for ch in parsed:
-                parsed_all[ch] = ch
+                if ch not in parsed_all:
+                    parsed_all[ch] = None  # TXT only for matching
         else:
             parsed = parse_xml(content)
             parsed_all.update(parsed)
