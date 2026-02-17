@@ -53,7 +53,6 @@ def load_epg_sources(file_path):
         print(f"Error loading EPG sources from {file_path}: {e}")
     return epg_sources
 
-
 # Replace the hardcoded list with dynamic loading from epg_sources.txt
 EPG_SOURCES_FILE = "epg_sources.txt"
 epg_sources = load_epg_sources(EPG_SOURCES_FILE)
@@ -214,15 +213,20 @@ def save_merged_xml(channels):
             ch_elem = ET.SubElement(root, "channel", id=ch)
             ET.SubElement(ch_elem, "display-name").text = ch
 
+    # Ensure the XML is written properly
     tree = ET.ElementTree(root)
 
     temp_xml = "temp_merged.xml"
+
+    # Write XML file in UTF-8 encoding
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
 
+    # Compress the XML file to .gz
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
-            f_out.write(f_in.read())
+            f_out.writelines(f_in)  # This ensures the file is written properly
 
+    # Clean up the temporary XML file after compression
     os.remove(temp_xml)
 
 
@@ -279,56 +283,5 @@ function toggle(id){{
 <p>Final merged file size: {size_mb:.2f} MB</p>
 
 <h3>Found Channels</h3>
-<table id="found" class="hidden">{found_rows}</table>
-
-<h3>Not Found Channels</h3>
-<table id="notfound" class="hidden">{not_rows}</table>
-
-</body>
-</html>
-"""
-
-    with open(INDEX_HTML, "w", encoding="utf-8") as f:
-        f.write(html)
-
-
-# -----------------------------
-# MAIN (UNCHANGED)
-# -----------------------------
-
-def main():
-    master = load_master_list()
-    parsed_all = set()
-
-    for url in epg_sources:
-        print(f"Fetching {url}")
-        content = fetch_content(url)
-        if not content:
-            continue
-
-        if url.endswith(".txt"):
-            parsed = parse_txt(content)
-        else:
-            parsed = parse_xml(content)
-
-        parsed_all.update(parsed)
-
-    # Merge the matched channels and manually matched channels
-    found_channels = smart_match(master, parsed_all)
-    final_channels = found_channels.union(EPG_TO_FINAL_NAME.values())
-
-    # Find the unmatched channels
-    not_found_channels = master.difference(final_channels)
-
-    # Save the merged XML
-    save_merged_xml(final_channels)
-
-    # Update the index.html
-    update_index(master, found_channels, not_found_channels)
-
-    print(f"EPG merge completed. Total channels found: {len(final_channels)}")
-
-
-if __name__ == "__main__":
-    main()
+<table id="found" class="
 
