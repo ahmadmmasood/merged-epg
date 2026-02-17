@@ -1,44 +1,48 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <title>iEPG Merge Report</title>
 <style>
-body { font-family: Arial, sans-serif; }
-table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
-.details { display: none; }
-.toggle { cursor: pointer; color: blue; text-decoration: underline; }
+body { font-family: Arial, sans-serif; margin: 20px; }
+h1, h2 { color: #333; }
+table { border-collapse: collapse; width: 50%; margin-bottom: 20px; }
+th, td { border: 1px solid #666; padding: 5px 10px; text-align: left; }
+.showhide { cursor: pointer; color: blue; text-decoration: underline; }
+.hidden { display: none; }
 </style>
 <script>
 function toggle(id) {
     var e = document.getElementById(id);
-    e.style.display = (e.style.display === 'none') ? 'table-row-group' : 'none';
+    if(e.classList.contains('hidden')) {
+        e.classList.remove('hidden');
+    } else {
+        e.classList.add('hidden');
+    }
 }
 </script>
 </head>
 <body>
-<h2>iEPG Merge Report</h2>
+<h1>iEPG Merge Report</h1>
+
 <p>Total channels in master list: 0</p>
-<p>Channels found: 0 (<span class="toggle" onclick="toggle('found')">show/hide</span>)</p>
-<p>Channels not found: 0 (<span class="toggle" onclick="toggle('notfound')">show/hide</span>)</p>
+<p>Channels found: 0 <span class="showhide" onclick="toggle('found_table')">(show/hide)</span></p>
+<p>Channels not found: 0 <span class="showhide" onclick="toggle('notfound_table')">(show/hide)</span></p>
 <p>Final merged file size: 0.00 MB</p>
 
-<table id="found" class="details">
-<thead>
-<tr><th>Master Channel</th><th>EPG Channel</th></tr>
-</thead>
+<h2>Found Channels</h2>
+<table id="found_table" class="hidden">
+<thead><tr><th>Channel</th></tr></thead>
 <tbody>
-<!-- Found channels will populate here dynamically -->
+<!-- Filled dynamically by merge_epg.py -->
 </tbody>
 </table>
 
-<table id="notfound" class="details">
-<thead>
-<tr><th>Master Channel</th></tr>
-</thead>
+<h2>Not Found Channels</h2>
+<table id="notfound_table" class="hidden">
+<thead><tr><th>Channel</th></tr></thead>
 <tbody>
-<!-- Not found channels will populate here dynamically -->
+<!-- Filled dynamically by merge_epg.py -->
 </tbody>
 </table>
 </body>

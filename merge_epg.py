@@ -1,13 +1,14 @@
 import os
 import gzip
+import requests
 import xml.etree.ElementTree as ET
-from urllib.request import urlopen
+from datetime import datetime
 
 MASTER_LIST_FILE = "master_channels.txt"
-MERGED_FILE = "merged.xml.gz"
-INDEX_FILE = "index.html"
+OUTPUT_XML_GZ = "merged.xml.gz"
+INDEX_HTML = "index.html"
 
-EPG_SOURCES = [
+epg_sources = [
     "https://epgshare01.online/epgshare01/epg_ripper_US2.txt",
     "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.txt",
     "https://www.open-epg.com/files/unitedstates10.xml.gz",
@@ -15,146 +16,113 @@ EPG_SOURCES = [
 
 def fetch_content(url):
     try:
-        resp = urlopen(url)
-        data = resp.read()
-        if url.endswith(".gz"):
-            return gzip.decompress(data)
-        return data
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        return r.content
     except Exception as e:
         print(f"Error fetching content from {url}: {e}")
-        return b""
+        return None
 
-def parse_epg(content, url):
-    channels = []
-    try:
-        if url.endswith(".xml") or url.endswith(".xml.gz"):
-            root = ET.fromstring(content)
-            for ch in root.findall("channel"):
-                ch_id = ch.attrib.get("id") or ""
-                display_name = ch.findtext("display-name") or ""
-                channels.append(display_name.strip())
-        else:  # assume text list of channels
-            for line in content.decode("utf-8", errors="ignore").splitlines():
-                line = line.strip()
-                if line:
-                    channels.append(line)
-    except ET.ParseError:
-        # fallback for malformed xml, treat as text
-        for line in content.decode("utf-8", errors="ignore").splitlines():
-            line = line.strip()
-            if line:
-                channels.append(line)
+def parse_channels_from_txt(content):
+    channels = set()
+    for line in content.decode(errors="ignore").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # remove suffixes like .us2, .locals1
+        line = line.split('.')[:-1]
+        line_name = " ".join(line).replace("HD", "").replace("HDTV", "").replace("Pacific", "").replace("West", "").strip()
+        if line_name:
+            channels.add(line_name.lower())
     return channels
 
-def normalize(name):
-    name = name.lower()
-    name = name.replace("hd", "").replace("hdtv", "")
-    name = name.replace("-", " ").replace(".", " ").replace("_", " ")
-    for skip in ["pacific", "west"]:
-        if skip in name:
-            return None
-    return name.strip()
+def parse_channels_from_xml(content):
+    channels = set()
+    try:
+        root = ET.fromstring(content)
+        for ch in root.findall("channel"):
+            name = ch.attrib.get("id") or ch.findtext("display-name") or ""
+            name = name.lower()
+            if name:
+                channels.add(name)
+    except Exception as e:
+        print(f"Error parsing XML: {e}")
+    return channels
 
-def match_channels(parsed_channels, master_channels):
-    found = {}
-    not_found = {}
-    normalized_master = {normalize(ch): ch for ch in master_channels}
-    for ch in parsed_channels:
-        n = normalize(ch)
-        if not n:
-            continue
-        # Check if any master channel is contained in the parsed channel
-        matched_master = None
-        for nm, mc in normalized_master.items():
-            if nm and nm in n:
-                matched_master = mc
-                break
-        if matched_master:
-            found[matched_master] = ch
-        else:
-            not_found[ch] = ch
-    # Channels from master list not matched
-    master_not_found = {mc: mc for mc in master_channels if mc not in found}
-    return found, master_not_found
-
-def write_merged_xml(channels):
-    root = ET.Element("tv")
-    for master_ch, epg_ch in channels.items():
-        ch_elem = ET.SubElement(root, "channel", id=master_ch)
-        name_elem = ET.SubElement(ch_elem, "display-name")
-        name_elem.text = epg_ch
-    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-    with gzip.open(MERGED_FILE, "wb") as f:
-        f.write(xml_bytes)
-    size_mb = os.path.getsize(MERGED_FILE) / (1024 * 1024)
-    return size_mb
-
-def load_master_channels():
+def load_master_list():
     with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip()]
+        return set(line.strip().lower() for line in f if line.strip())
 
-def update_index_html(total, found_count, not_found_count, merged_size, found_channels, not_found_channels):
+def merge_channels(parsed_channel_sets):
+    merged = set()
+    for s in parsed_channel_sets:
+        merged.update(s)
+    return merged
+
+def save_merged_xml(merged_channels):
+    # create a minimal XML
+    root = ET.Element("tv")
+    for ch in sorted(merged_channels):
+        ch_elem = ET.SubElement(root, "channel", id=ch)
+        ET.SubElement(ch_elem, "display-name").text = ch
+    tree = ET.ElementTree(root)
+    # write XML then gzip it
+    tmp_xml = "merged_tmp.xml"
+    tree.write(tmp_xml, encoding="utf-8", xml_declaration=True)
+    with open(tmp_xml, "rb") as f_in, gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
+        f_out.writelines(f_in)
+    os.remove(tmp_xml)
+
+def update_index_html(master_channels, found, not_found):
+    merged_size = os.path.getsize(OUTPUT_XML_GZ) / (1024*1024)
+    found_html = "".join(f"<tr><td>{ch}</td></tr>" for ch in sorted(found))
+    not_found_html = "".join(f"<tr><td>{ch}</td></tr>" for ch in sorted(not_found))
     html = f"""
 <html>
-<head>
-<title>iEPG Merge Report</title>
-<style>
-table {{border-collapse: collapse; width: 100%;}}
-th, td {{border: 1px solid #ccc; padding: 5px; text-align: left;}}
-.details {{display:none;}}
-.toggle {{cursor:pointer; color:blue; text-decoration:underline;}}
-</style>
-<script>
-function toggle(id) {{
-    var e = document.getElementById(id);
-    e.style.display = e.style.display === 'none' ? 'table-row-group' : 'none';
-}}
-</script>
-</head>
+<head><title>iEPG Merge Report</title></head>
 <body>
-<h2>iEPG Merge Report</h2>
-<p>Total channels in master list: {total}</p>
-<p>Channels found: {found_count} (<span class="toggle" onclick="toggle('found')">show/hide</span>)</p>
-<p>Channels not found: {not_found_count} (<span class="toggle" onclick="toggle('notfound')">show/hide</span>)</p>
+<h1>iEPG Merge Report</h1>
+<p>Total channels in master list: {len(master_channels)}</p>
+<p>Channels found: {len(found)} (show/hide)</p>
+<p>Channels not found: {len(not_found)} (show/hide)</p>
 <p>Final merged file size: {merged_size:.2f} MB</p>
 
-<table id="found" class="details">
-<tr><th>Master Channel</th><th>EPG Channel</th></tr>
+<h2>Found Channels</h2>
+<table border="1">{found_html}</table>
+
+<h2>Not Found Channels</h2>
+<table border="1">{not_found_html}</table>
+</body>
+</html>
 """
-    for mc, epg in found_channels.items():
-        html += f"<tr><td>{mc}</td><td>{epg}</td></tr>\n"
-    html += "</table>\n"
-
-    html += '<table id="notfound" class="details">\n<tr><th>Master Channel</th></tr>\n'
-    for mc in not_found_channels.keys():
-        html += f"<tr><td>{mc}</td></tr>\n"
-    html += "</table>\n</body>\n</html>"
-
-    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+    with open(INDEX_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
 def main():
-    master_channels = load_master_channels()
-    total_master = len(master_channels)
-    parsed_channels_all = []
+    master_channels = load_master_list()
+    parsed_sets = []
 
-    for url in EPG_SOURCES:
+    for url in epg_sources:
         print(f"Fetching {url}")
         content = fetch_content(url)
-        parsed = parse_epg(content, url)
+        if content is None:
+            continue
+        if url.endswith(".txt"):
+            parsed = parse_channels_from_txt(content)
+        else:
+            parsed = parse_channels_from_xml(content)
         print(f"Processed {url} - Parsed {len(parsed)} channels")
-        parsed_channels_all.extend(parsed)
+        parsed_sets.append(parsed)
 
-    found_channels, not_found_channels = match_channels(parsed_channels_all, master_channels)
-    merged_size = write_merged_xml(found_channels)
+    merged_channels = merge_channels(parsed_sets)
+    save_merged_xml(merged_channels)
 
-    print(f"Total channels in master list: {total_master}")
-    print(f"Channels found: {len(found_channels)}")
-    print(f"Channels not found: {len(not_found_channels)}")
-    print(f"Final merged file size: {merged_size:.2f} MB")
+    found = set(ch for ch in master_channels if ch in merged_channels)
+    not_found = master_channels - found
 
-    update_index_html(total_master, len(found_channels), len(not_found_channels), merged_size, found_channels, not_found_channels)
-    print(f"{INDEX_FILE} has been updated.")
+    update_index_html(master_channels, found, not_found)
+    print("index.html has been updated.")
+    print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
 
 if __name__ == "__main__":
     main()
