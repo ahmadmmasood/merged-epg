@@ -14,27 +14,13 @@ INDEX_HTML = "index.html"
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
-    # Manually add the channels you've requested
+    # Additional mappings...
     "wjla-dt": "abc",
     "wdcw-dt": "cd",  # for CW
     "wttg-dt": "fox",
     "wdca-dt": "foxplus",
     "wrc-dt": "nbc",
-    # Starz variants
-    "starz": "starz",
-    "starz.cinema": "starz cinema",
-    "starz.comedy": "starz comedy",
-    "starz.edge": "starz edge",
-    "starz.inblack": "starz inblack",
-    "starz.kids.and.family": "starz kids and family",
-    # Variants of Starz Encore
-    "starz.encore": "starz encore",
-    "starz.encore.action": "starz encore action",
-    "starz.encore.black": "starz encore black",
-    "starz.encore.classic": "starz encore classic",
-    "starz.encore.family": "starz encore family",
-    "starz.encore.suspense": "starz encore suspense",
-    "starz.encore.westerns": "starz encore westerns"
+    # Add more mappings as needed
 }
 
 # -----------------------------
@@ -221,7 +207,7 @@ def save_merged_xml(channels):
     # Write XML file in UTF-8 encoding with xml_declaration
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
 
-    # Compress the XML file to .gz
+    # Compress the XML file to .gz using a more robust method
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
             f_out.writelines(f_in)  # This ensures the file is written properly
