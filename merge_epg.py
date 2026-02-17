@@ -41,94 +41,14 @@ def similar(a, b):
 # ALIASES (Exact raw EPG IDs)
 # -----------------------------
 EPG_ALIASES = {
-    # Premium
+    # Add all known exact mappings here
+    # Example:
     "home.and.garden.television.hd.us2": "HGTV",
     "5_starmax.hd.east.us2": "5StarMax",
-    "hbo_family.us2": "HBO Family",
-    "hbo.us": "HBO",
-    "hbo_hits.us": "HBO Hits",
-    "hbo_comedy.us": "HBO Comedy",
-    "hbo_drama.us": "HBO Drama",
-    "hbo_signature.us": "HBO Signature",
-    "hbo_zone.us": "HBO Zone",
-    "cinemax.us": "Cinemax",
-    "actionmax.hd": "ActionMax",
-    "moremax.hd": "MoreMax",
-    "thrillermax.hd": "ThrillerMax",
-    "moviemax.hd": "MovieMax",
-    "outermax.hd": "OuterMax",
-    "showtime.us": "Showtime",
-    "showtime2.us": "Showtime 2",
-    "sho_bet.us": "SHO×BET",
-    "showtime_extreme.us": "Showtime Extreme",
-    "showtime_family.us": "Showtime Family Zone",
-    "showtime_next.us": "Showtime Next",
-    "showtime_showcase.us": "Showtime Showcase",
-    "showtime_women.us": "Showtime Women",
-    "tmc.us": "The Movie Channel",
-    "tmc_xtra.hd": "The Movie Channel Xtra",
-    "flix.us": "Flix",
-    "starz.us": "Starz",
-    "starz_cinema.hd": "Starz Cinema",
-    "starz_comedy.hd": "Starz Comedy",
-    "starz_edge.hd": "Starz Edge",
-    "starz_inblack.hd": "Starz InBlack",
-    "starz_kids_family.hd": "Starz Kids & Family",
-    "starz_encore.hd": "Starz Encore",
-    "starz_encore_action.hd": "Starz Encore Action",
-    "starz_encore_black.hd": "Starz Encore Black",
-    "starz_encore_classic.hd": "Starz Encore Classic",
-    "starz_encore_family.hd": "Starz Encore Family",
-    "starz_encore_suspense.hd": "Starz Encore Suspense",
-    "starz_encore_westerns.hd": "Starz Encore Westerns",
-    "indieplex.hd": "IndiePlex",
-    "movieplex.hd": "MoviePlex",
-    "retroplex.hd": "RetroPlex",
-
-    # Foreign / International
-    "aajtak.in": "Aaj Tak",
-    "al_ahram.tv": "Al Ahram TV",
-    "al_hayat.tv": "Al Hayat TV",
-    "al_masriya.tv": "Al Masriya TV",
-    "al_nahar.tv": "Al Nahar TV",
-    "cbc.egypt": "CBC (Egypt)",
-    "dream.tv": "Dream TV",
-    "lbci.tv": "LBCI",
-    "mtv_lebanon": "MTV Lebanon",
-    "nile.tv": "Nile TV International",
-    "otv_lebanon": "OTV Lebanon",
-    "republic.tv": "Republic TV",
-    "sun.tv": "Sun TV",
-    "tv9": "TV9",
-
-    # Local / Regional
+    "wjla-dt": "WJLA-DT",
+    "wusa-hd": "WUSA-HD",
     "buzzr": "BUZZR",
-    "crimes": "CRIMES",
-    "cwwnuv": "CWWNUV",
-    "csn_midatlantic": "Comcast SportsNet Mid-Atlantic",
-    "crime_tv": "Crime TV",
-    "fox_weather": "Fox Weather",
-    "future_tv": "Future TV",
-    "gettv": "GetTV",
-    "heroes_icons": "Heroes & Icons",
-    "mpt_kids": "MPT Kids",
-    "mpt2": "MPT-2",
-    "mtv2": "MTV2",
-    "metv": "MeTV",
-    "metro": "Metro",
-    "wjla_news": "NewsChannel 8 (WJLA News)",
-    "wusa_hd": "WUSA-HD",
-    "wjz_cbs": "WJZ 13 (CBS Baltimore)",
-    "wmar_abc": "WMAR 2 (ABC Baltimore)",
-    "weta_kids": "WETA Kids",
-    "weta_uk": "WETA UK",
-    "weta_hd": "WETA-HD",
-    "xitos": "XITOS",
-
-    # Kids / Cartoon
-    "cartoonito.us": "Cartoonito",
-    "nick_at_nite.us": "Nick at Nite",
-    "teennick.us": "TeenNick"
+    # Add your missing 100+ channels here
 }
 
 # -----------------------------
@@ -172,7 +92,7 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# LOCAL ID NORMALIZATION
+# NORMALIZE EPG IDs
 # -----------------------------
 def normalize_epg_id(raw_id):
     """Remove source-specific suffixes like .us_locals1, .us_locals2, .us_locals"""
@@ -185,7 +105,7 @@ def normalize_epg_id(raw_id):
     return raw_id
 
 # -----------------------------
-# PARSE XML STREAM
+# PARSE XML STREAM (smart + strict filtering)
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
@@ -195,6 +115,7 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
+    # Try gzip first, fallback to raw bytes
     try:
         f = gzip.open(BytesIO(content_bytes), "rb")
         f.peek(1)
@@ -204,7 +125,6 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     context = ET.iterparse(f, events=("end",))
 
     for event, elem in context:
-
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
             normalized_id = normalize_epg_id(raw_id)
@@ -212,37 +132,35 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
             cleaned_display = clean_text(display)
             matched = False
 
-            # 1️⃣ Exact alias mapping
+            # 1️⃣ Exact alias
             if normalized_id in EPG_ALIASES:
-                allowed_channel_ids.add(raw_id)
+                matched = True
                 channel_id_to_display[raw_id] = EPG_ALIASES[normalized_id]
-                matched = True
 
-            # 2️⃣ Exact cleaned master match
-            if not matched and clean_text(normalized_id) in master_cleaned:
-                allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = master_cleaned[clean_text(normalized_id)]
+            # 2️⃣ Exact master list
+            if not matched and cleaned_display in master_cleaned:
                 matched = True
+                channel_id_to_display[raw_id] = master_cleaned[cleaned_display]
 
             # 3️⃣ Substring match
             if not matched:
                 for master_clean, master_disp in master_cleaned.items():
                     if master_clean in cleaned_display or cleaned_display in master_clean:
-                        allowed_channel_ids.add(raw_id)
-                        channel_id_to_display[raw_id] = master_disp
                         matched = True
+                        channel_id_to_display[raw_id] = master_disp
                         break
 
-            # 4️⃣ Fuzzy match
+            # 4️⃣ Fuzzy match >=0.7
             if not matched:
                 for master_clean, master_disp in master_cleaned.items():
                     if similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7:
-                        allowed_channel_ids.add(raw_id)
-                        channel_id_to_display[raw_id] = master_disp
                         matched = True
+                        channel_id_to_display[raw_id] = master_disp
                         break
 
-            if not matched:
+            if matched:
+                allowed_channel_ids.add(raw_id)
+            else:
                 unmatched_channels.append((raw_id, display))
 
             elem.clear()
@@ -289,7 +207,7 @@ def save_merged_xml(channel_ids, programmes):
 
         for cid in sorted(channel_ids):
             ch_elem = ET.Element("channel", id=cid)
-            ET.SubElement(ch_elem, "display-name").text = cid
+            ET.SubElement(ch_elem, "display-name").text = channel_id_to_display.get(cid, cid)
             f_out.write(ET.tostring(ch_elem, encoding="utf-8"))
 
         for prog in programmes:
@@ -365,6 +283,9 @@ function toggle(id){{
 # MAIN
 # -----------------------------
 def main():
+    global channel_id_to_display
+    channel_id_to_display = {}
+
     master_cleaned, master_display = load_master_list()
     sources = load_epg_sources()
 
@@ -389,6 +310,7 @@ def main():
 
         all_channel_ids.update(channel_ids)
         all_programmes.extend(programmes)
+        channel_id_to_display.update(id_to_display)
 
         for disp in id_to_display.values():
             matched_display_names.add(disp)
