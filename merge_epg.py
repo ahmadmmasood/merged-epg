@@ -14,7 +14,7 @@ INDEX_HTML = "index.html"
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
-    # Additional mappings...
+    # Add any other necessary mappings here...
     "wjla-dt": "abc",
     "wdcw-dt": "cd",  # for CW
     "wttg-dt": "fox",
