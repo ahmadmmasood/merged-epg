@@ -1,4 +1,4 @@
-kimport os
+import os
 import gzip
 import requests
 import xml.etree.ElementTree as ET
@@ -239,6 +239,10 @@ def get_eastern_timestamp():
 def update_index(master, found, not_found):
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
     timestamp = get_eastern_timestamp()
+
+    # Log channels processed for debugging
+    print(f"Channels found: {len(found)}")
+    print(f"Channels not found: {len(not_found)}")
 
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
