@@ -5,10 +5,12 @@ import xml.etree.ElementTree as ET
 import re
 from datetime import datetime, timedelta
 from io import BytesIO
+import pytz
 
 MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
+INDEX_HTML = "index.html"
 
 # -----------------------------
 # NORMALIZATION
@@ -28,19 +30,23 @@ def clean_text(name):
     return name.strip()
 
 # -----------------------------
-# LOAD MASTER
+# LOAD MASTER LIST
 # -----------------------------
 def load_master_list():
-    master_cleaned = set()
+    master_cleaned = {}
+    master_display = []
+
     with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                master_cleaned.add(clean_text(line))
-    return master_cleaned
+                master_cleaned[clean_text(line)] = line
+                master_display.append(line)
+
+    return master_cleaned, master_display
 
 # -----------------------------
-# LOAD SOURCES
+# LOAD EPG SOURCES
 # -----------------------------
 def load_epg_sources():
     sources = []
@@ -68,7 +74,9 @@ def fetch_content(url):
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
+    channel_id_to_display = {}
     programmes = []
+
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
     try:
@@ -86,8 +94,11 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
-            if clean_text(display) in master_cleaned:
+            cleaned = clean_text(display)
+
+            if cleaned in master_cleaned:
                 allowed_channel_ids.add(raw_id)
+                channel_id_to_display[raw_id] = master_cleaned[cleaned]
 
             elem.clear()
 
@@ -117,10 +128,10 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
             elem.clear()
 
-    return allowed_channel_ids, programmes
+    return allowed_channel_ids, channel_id_to_display, programmes
 
 # -----------------------------
-# SAVE OUTPUT
+# SAVE FINAL XML
 # -----------------------------
 def save_merged_xml(channel_ids, programmes):
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
@@ -138,16 +149,81 @@ def save_merged_xml(channel_ids, programmes):
         f_out.write(b"\n</tv>")
 
 # -----------------------------
+# INDEX UPDATE
+# -----------------------------
+def get_eastern_timestamp():
+    eastern = pytz.timezone("US/Eastern")
+    return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+def update_index(master_display, matched_display_names):
+    found = []
+    not_found = []
+
+    for channel in master_display:
+        if channel in matched_display_names:
+            found.append(channel)
+        else:
+            not_found.append(channel)
+
+    size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
+    timestamp = get_eastern_timestamp()
+
+    found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
+    not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>EPG Merge Report</title>
+<style>
+body {{ font-family: Arial; }}
+table {{ border-collapse: collapse; width: 50%; }}
+td {{ border: 1px solid #999; padding: 4px; }}
+.hidden {{ display:none; }}
+</style>
+<script>
+function toggle(id){{
+  var e=document.getElementById(id);
+  e.classList.toggle("hidden");
+}}
+</script>
+</head>
+<body>
+
+<h2>EPG Merge Report</h2>
+<p><strong>Report generated on:</strong> {timestamp}</p>
+
+<p>Total channels in master list: {len(master_display)}</p>
+<p>Channels found: {len(found)} <a href="#" onclick="toggle('found')">(show/hide)</a></p>
+<p>Channels not found: {len(not_found)} <a href="#" onclick="toggle('notfound')">(show/hide)</a></p>
+<p>Final merged file size: {size_mb:.2f} MB</p>
+
+<h3>Found Channels</h3>
+<table id="found" class="hidden">{found_rows}</table>
+
+<h3>Not Found Channels</h3>
+<table id="notfound" class="hidden">{not_rows}</table>
+
+</body>
+</html>
+"""
+
+    with open(INDEX_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+# -----------------------------
 # MAIN
 # -----------------------------
 def main():
-    master_cleaned = load_master_list()
+    master_cleaned, master_display = load_master_list()
     sources = load_epg_sources()
 
     all_channel_ids = set()
     all_programmes = []
+    matched_display_names = set()
 
-    print(f"Master channels loaded: {len(master_cleaned)}")
+    print(f"Master channels loaded: {len(master_display)}")
     print(f"EPG sources loaded: {len(sources)}")
 
     for url in sources:
@@ -157,7 +233,7 @@ def main():
             continue
 
         try:
-            channel_ids, programmes = parse_xml_stream(content, master_cleaned)
+            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned)
         except ET.ParseError as e:
             print(f"XML parse error in {url}: {e}")
             continue
@@ -165,10 +241,14 @@ def main():
         all_channel_ids.update(channel_ids)
         all_programmes.extend(programmes)
 
+        for disp in id_to_display.values():
+            matched_display_names.add(disp)
+
         print(f"  Channels kept: {len(channel_ids)}")
         print(f"  Programmes kept: {len(programmes)}")
 
     save_merged_xml(all_channel_ids, all_programmes)
+    update_index(master_display, matched_display_names)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
 
