@@ -15,7 +15,7 @@ EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
     "wjla-dt": "abc",
-    "wdcw-dt": "cd",  # for CW
+    "wdcw-dt": "cd",
     "wttg-dt": "fox",
     "wdca-dt": "foxplus",
     "wrc-dt": "nbc",
@@ -24,7 +24,6 @@ EPG_TO_FINAL_NAME = {
 # -----------------------------
 # Load EPG Sources from File
 # -----------------------------
-
 def load_epg_sources(file_path):
     epg_sources = []
     try:
@@ -42,35 +41,28 @@ epg_sources = load_epg_sources(EPG_SOURCES_FILE)
 print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
-# NORMALIZATION (UNCHANGED)
+# CLEANING FUNCTION (UNCHANGED)
 # -----------------------------
-
 def clean_text(name):
     name = name.lower()
     name = name.replace(".", " ")
     name = name.replace("hd", "")
     name = name.replace("east", "")
     name = name.replace("west", "")
-
     if "pacific" in name or "west" in name:
         return None
-
     name = name.replace("&", " and ")
     name = name.replace("-", " ")
-
     remove_words = ["hd", "hdtv", "tv", "channel", "network", "east"]
     for word in remove_words:
         name = re.sub(r"\b" + word + r"\b", " ", name)
-
     name = re.sub(r"[^\w\s]", " ", name)
     name = re.sub(r"\s+", " ", name)
-
     return name.strip()
 
 # -----------------------------
-# FETCH CONTENT (UNCHANGED)
+# FETCH CONTENT
 # -----------------------------
-
 def fetch_content(url):
     try:
         r = requests.get(url, timeout=30)
@@ -83,7 +75,6 @@ def fetch_content(url):
 # -----------------------------
 # PARSE TXT (FOR MATCHING ONLY)
 # -----------------------------
-
 def parse_txt(content):
     channels = set()
     lines = content.decode(errors="ignore").splitlines()
@@ -99,31 +90,27 @@ def parse_txt(content):
 # -----------------------------
 # PARSE XML (PRESERVE ORIGINAL IDs)
 # -----------------------------
-
 def parse_xml(content):
-    channels = {}  # key = cleaned display name, value = original ID
+    channels = {}  # key = cleaned display-name, value = original ID
     try:
         try:
             content = gzip.decompress(content)
         except:
             pass
-
         root = ET.fromstring(content)
-
         for ch in root.findall("channel"):
             original_id = ch.attrib.get("id", "")
             display_name = ch.findtext("display-name") or original_id
             cleaned = clean_text(display_name)
             if cleaned:
-                channels[cleaned] = original_id  # preserve original ID
+                channels[cleaned] = original_id
     except Exception as e:
         print(f"Error parsing XML: {e}")
     return channels
 
 # -----------------------------
-# MASTER LIST (UNCHANGED)
+# LOAD MASTER LIST
 # -----------------------------
-
 def load_master_list():
     master = set()
     with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
@@ -137,9 +124,8 @@ def load_master_list():
     return master
 
 # -----------------------------
-# MATCHING (UNCHANGED)
+# SMART MATCHING
 # -----------------------------
-
 def smart_match(master_channels, parsed_channels):
     found = set()
     for master in master_channels:
@@ -154,18 +140,13 @@ def smart_match(master_channels, parsed_channels):
     return found
 
 # -----------------------------
-# SAVE MERGED XML (XML IDs ONLY)
+# SAVE MERGED XML
 # -----------------------------
-
 def save_merged_xml(channels):
     root = ET.Element("tv")
-
     for cleaned_name, original_id in sorted(channels.items()):
-        if not original_id:
-            continue  # skip TXT-only entries
         if "pacific" in cleaned_name or "west" in cleaned_name or "tbs superstation" in cleaned_name:
             continue
-
         final_id = EPG_TO_FINAL_NAME.get(original_id, original_id)
         ch_elem = ET.SubElement(root, "channel", id=final_id)
         ET.SubElement(ch_elem, "display-name").text = cleaned_name
@@ -173,29 +154,24 @@ def save_merged_xml(channels):
     tree = ET.ElementTree(root)
     temp_xml = "temp_merged.xml"
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
-
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
             f_out.writelines(f_in)
-
     os.remove(temp_xml)
 
 # -----------------------------
-# GET EASTERN TIME STAMP (UNCHANGED)
+# GET EASTERN TIME
 # -----------------------------
-
 def get_eastern_timestamp():
     eastern = pytz.timezone("US/Eastern")
     return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 # -----------------------------
-# UPDATE INDEX (UNCHANGED)
+# UPDATE INDEX
 # -----------------------------
-
 def update_index(master, found, not_found):
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
     timestamp = get_eastern_timestamp()
-
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
 
@@ -236,35 +212,40 @@ function toggle(id){{
 </body>
 </html>
 """
-
     with open(INDEX_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
 # -----------------------------
 # MAIN
 # -----------------------------
-
 def main():
     master = load_master_list()
     parsed_all = {}
 
+    # 1️⃣ First process XML sources for all IDs
     for url in epg_sources:
-        print(f"Fetching {url}")
-        content = fetch_content(url)
-        if not content:
-            continue
-
-        if url.endswith(".txt"):
-            parsed = parse_txt(content)
-            # TXT used only for matching; no ID generation
-            for ch in parsed:
-                if ch not in parsed_all:
-                    parsed_all[ch] = None
-        else:
+        if url.endswith(".xml") or url.endswith(".xml.gz"):
+            print(f"Fetching XML {url}")
+            content = fetch_content(url)
+            if not content:
+                continue
             parsed = parse_xml(content)
             parsed_all.update(parsed)
+            print(f"Processed {url} - Parsed {len(parsed)} channels")
 
-        print(f"Processed {url} - Parsed {len(parsed)} channels")
+    # 2️⃣ Then process TXT sources only for matching
+    for url in epg_sources:
+        if url.endswith(".txt"):
+            print(f"Fetching TXT {url}")
+            content = fetch_content(url)
+            if not content:
+                continue
+            parsed_txt = parse_txt(content)
+            # TXT used only for matching, don't add IDs
+            for ch in parsed_txt:
+                if ch not in parsed_all:
+                    parsed_all[ch] = None
+            print(f"Processed {url} - Parsed {len(parsed_txt)} channels (for matching)")
 
     found = smart_match(master, parsed_all.keys())
     not_found = master - found
