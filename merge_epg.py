@@ -39,7 +39,6 @@ def load_epg_sources(file_path):
 
 EPG_SOURCES_FILE = "epg_sources.txt"
 epg_sources = load_epg_sources(EPG_SOURCES_FILE)
-
 print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
@@ -69,7 +68,7 @@ def clean_text(name):
     return name.strip()
 
 # -----------------------------
-# FETCH (UNCHANGED)
+# FETCH CONTENT (UNCHANGED)
 # -----------------------------
 
 def fetch_content(url):
@@ -82,22 +81,19 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE TXT (UNCHANGED FOR MATCHING ONLY)
+# PARSE TXT (FOR MATCHING ONLY)
 # -----------------------------
 
 def parse_txt(content):
     channels = set()
     lines = content.decode(errors="ignore").splitlines()
-
     for line in lines:
         line = line.strip()
         if not line:
             continue
-
         cleaned = clean_text(line)
         if cleaned:
             channels.add(cleaned)
-
     return channels
 
 # -----------------------------
@@ -105,8 +101,7 @@ def parse_txt(content):
 # -----------------------------
 
 def parse_xml(content):
-    channels = {}  # key = cleaned name, value = original id
-
+    channels = {}  # key = cleaned display name, value = original ID
     try:
         try:
             content = gzip.decompress(content)
@@ -118,15 +113,11 @@ def parse_xml(content):
         for ch in root.findall("channel"):
             original_id = ch.attrib.get("id", "")
             display_name = ch.findtext("display-name") or original_id
-
             cleaned = clean_text(display_name)
-
             if cleaned:
-                channels[cleaned] = original_id  # preserve original ID exactly
-
+                channels[cleaned] = original_id  # preserve original ID
     except Exception as e:
         print(f"Error parsing XML: {e}")
-
     return channels
 
 # -----------------------------
@@ -151,24 +142,19 @@ def load_master_list():
 
 def smart_match(master_channels, parsed_channels):
     found = set()
-
     for master in master_channels:
-
         if master in parsed_channels:
             found.add(master)
             continue
-
         master_words = master.split()
-
         for parsed in parsed_channels:
             if all(word in parsed for word in master_words):
                 found.add(master)
                 break
-
     return found
 
 # -----------------------------
-# XML CREATION (USE ORIGINAL XML IDs + APPLY MAPPINGS)
+# SAVE MERGED XML (XML IDs ONLY)
 # -----------------------------
 
 def save_merged_xml(channels):
@@ -177,13 +163,12 @@ def save_merged_xml(channels):
     for cleaned_name, original_id in sorted(channels.items()):
         if not original_id:
             continue  # skip TXT-only entries
+        if "pacific" in cleaned_name or "west" in cleaned_name or "tbs superstation" in cleaned_name:
+            continue
 
-        if "pacific" not in cleaned_name and "west" not in cleaned_name and "tbs superstation" not in cleaned_name:
-            # Apply manual mapping if defined
-            final_id = EPG_TO_FINAL_NAME.get(original_id, original_id)
-
-            ch_elem = ET.SubElement(root, "channel", id=final_id)
-            ET.SubElement(ch_elem, "display-name").text = cleaned_name
+        final_id = EPG_TO_FINAL_NAME.get(original_id, original_id)
+        ch_elem = ET.SubElement(root, "channel", id=final_id)
+        ET.SubElement(ch_elem, "display-name").text = cleaned_name
 
     tree = ET.ElementTree(root)
     temp_xml = "temp_merged.xml"
@@ -204,7 +189,7 @@ def get_eastern_timestamp():
     return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 # -----------------------------
-# INDEX UPDATE (UNCHANGED)
+# UPDATE INDEX (UNCHANGED)
 # -----------------------------
 
 def update_index(master, found, not_found):
@@ -256,7 +241,7 @@ function toggle(id){{
         f.write(html)
 
 # -----------------------------
-# MAIN (TXT used only for matching)
+# MAIN
 # -----------------------------
 
 def main():
@@ -271,9 +256,10 @@ def main():
 
         if url.endswith(".txt"):
             parsed = parse_txt(content)
+            # TXT used only for matching; no ID generation
             for ch in parsed:
                 if ch not in parsed_all:
-                    parsed_all[ch] = None  # TXT only for matching
+                    parsed_all[ch] = None
         else:
             parsed = parse_xml(content)
             parsed_all.update(parsed)
