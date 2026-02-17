@@ -236,12 +236,6 @@ NewsChannel 8 (WJLA News)
 WJZ 13 (CBS Baltimore)
 WMAR 2 (ABC Baltimore)
 WMPB (PBS Maryland)
-Washington Post TV / streaming feeds
-Local Weather Channels (WJLA Weather, WUSA Weather, WBAL Weather)
-Maryland Public Broadcasting Sports & Specials
-Maryland Lottery / Lottery TV feed
-DC Public Access Channels
-Baltimore Public Access Channels
 
 #=========================
 #FOREIGN TIER
