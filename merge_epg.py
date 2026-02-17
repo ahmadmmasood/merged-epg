@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 from io import BytesIO
 import pytz
-from collections import defaultdict
+from difflib import SequenceMatcher
 
 MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
@@ -31,13 +31,20 @@ def clean_text(name):
     return name.strip()
 
 # -----------------------------
+# FUZZY MATCHING
+# -----------------------------
+def similar(a, b):
+    """Return similarity ratio between 0 and 1"""
+    return SequenceMatcher(None, a, b).ratio()
+
+# -----------------------------
 # ALIASES (Optional Custom Mapping)
 # -----------------------------
 EPG_ALIASES = {
-    # raw EPG id : master name
+    # raw EPG id : master display name
     "home.and.garden.television.hd.us2": "HGTV",
     "5.starmax.hd.east.us2": "5StarMax",
-    # add more as needed
+    # Add more known mismatches here
 }
 
 # -----------------------------
@@ -81,7 +88,7 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE XML WITH SMART MATCHING
+# PARSE XML STREAM WITH SMART + FUZZY MATCH
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
@@ -90,6 +97,7 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
+    # Try gzip first, fallback to raw bytes
     try:
         f = gzip.open(BytesIO(content_bytes), "rb")
         f.peek(1)
@@ -105,25 +113,40 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
-            # 1️⃣ Check alias mapping
+            matched = False
+
+            # 1️⃣ Alias mapping
             if raw_id in EPG_ALIASES:
-                matched_name = EPG_ALIASES[raw_id]
                 allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = matched_name
-            else:
+                channel_id_to_display[raw_id] = EPG_ALIASES[raw_id]
+                matched = True
+
+            if not matched:
                 cleaned = clean_text(display)
 
                 # 2️⃣ Exact cleaned match
                 if cleaned in master_cleaned:
                     allowed_channel_ids.add(raw_id)
                     channel_id_to_display[raw_id] = master_cleaned[cleaned]
-                else:
-                    # 3️⃣ Substring match fallback
-                    for master_clean, master_disp in master_cleaned.items():
-                        if master_clean in cleaned or cleaned in master_clean:
-                            allowed_channel_ids.add(raw_id)
-                            channel_id_to_display[raw_id] = master_disp
-                            break
+                    matched = True
+
+            if not matched:
+                # 3️⃣ Substring match
+                for master_clean, master_disp in master_cleaned.items():
+                    if master_clean in cleaned or cleaned in master_clean:
+                        allowed_channel_ids.add(raw_id)
+                        channel_id_to_display[raw_id] = master_disp
+                        matched = True
+                        break
+
+            if not matched:
+                # 4️⃣ Fuzzy match fallback (≥80%)
+                for master_clean, master_disp in master_cleaned.items():
+                    if similar(cleaned, master_clean) >= 0.8:
+                        allowed_channel_ids.add(raw_id)
+                        channel_id_to_display[raw_id] = master_disp
+                        matched = True
+                        break
 
             elem.clear()
 
@@ -147,7 +170,7 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
                 continue
 
             if start_dt <= cutoff:
-                # 4️⃣ Deduplicate by channel_id + start + title
+                # Deduplicate programmes by channel + start + title
                 title = elem.findtext("title") or ""
                 prog_key = (raw_channel, start_str, title)
                 if prog_key not in parse_xml_stream.seen_programmes:
@@ -158,11 +181,11 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
     return allowed_channel_ids, channel_id_to_display, programmes
 
-# Initialize dedup set as static attribute
+# Static attribute to hold seen programme keys
 parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
-# SAVE FINAL XML
+# SAVE MERGED XML
 # -----------------------------
 def save_merged_xml(channel_ids, programmes):
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
@@ -282,7 +305,6 @@ def main():
     update_index(master_display, matched_display_names)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
-
     print("\nFinished.")
     print(f"Final channels: {len(all_channel_ids)}")
     print(f"Final programmes: {len(all_programmes)}")
