@@ -39,11 +39,9 @@ def load_epg_sources(file_path):
         print(f"Error loading EPG sources from {file_path}: {e}")
     return epg_sources
 
-# Replace the hardcoded list with dynamic loading from epg_sources.txt
 EPG_SOURCES_FILE = "epg_sources.txt"
 epg_sources = load_epg_sources(EPG_SOURCES_FILE)
 
-# Check if the list has been populated correctly
 print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
@@ -53,31 +51,25 @@ print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 def clean_text(name):
     name = name.lower()
 
-    # Remove periods, "HD", "East", "West", and other irrelevant parts
     name = name.replace(".", " ")
     name = name.replace("hd", "")
     name = name.replace("east", "")
     name = name.replace("west", "")
 
-    # Remove any unwanted directional words or time-zone-related keywords
     if "pacific" in name or "west" in name:
         return None
 
-    # Replace '&' with "and" for matching purposes
     name = name.replace("&", " and ")
     name = name.replace("-", " ")
 
-    # Remove common TV-related words (like 'hd', 'tv', 'channel')
     remove_words = ["hd", "hdtv", "tv", "channel", "network", "east"]
     for word in remove_words:
         name = re.sub(r"\b" + word + r"\b", " ", name)
 
-    # Clean up any remaining non-alphanumeric characters (like punctuation)
     name = re.sub(r"[^\w\s]", " ", name)
     name = re.sub(r"\s+", " ", name)
 
     return name.strip()
-
 
 # -----------------------------
 # FETCH (UNCHANGED)
@@ -91,7 +83,6 @@ def fetch_content(url):
     except Exception as e:
         print(f"Error fetching content from {url}: {e}")
         return None
-
 
 # -----------------------------
 # PARSE TXT (UNCHANGED)
@@ -112,15 +103,14 @@ def parse_txt(content):
 
     return channels
 
-
 # -----------------------------
-# PARSE XML (UNCHANGED)
+# PARSE XML (MODIFIED TO PRESERVE ORIGINAL IDs)
 # -----------------------------
 
 def parse_xml(content):
-    channels = set()
+    channels = {}  # key = cleaned name, value = original id
+
     try:
-        # Safely decompress if gzipped
         try:
             content = gzip.decompress(content)
         except:
@@ -129,16 +119,18 @@ def parse_xml(content):
         root = ET.fromstring(content)
 
         for ch in root.findall("channel"):
-            name = ch.attrib.get("id") or ch.findtext("display-name") or ""
-            cleaned = clean_text(name)
+            original_id = ch.attrib.get("id", "")
+            display_name = ch.findtext("display-name") or original_id
+
+            cleaned = clean_text(display_name)
+
             if cleaned:
-                channels.add(cleaned)
+                channels[cleaned] = original_id
 
     except Exception as e:
         print(f"Error parsing XML: {e}")
 
     return channels
-
 
 # -----------------------------
 # MASTER LIST (UNCHANGED)
@@ -156,7 +148,6 @@ def load_master_list():
                 master.add(cleaned)
     return master
 
-
 # -----------------------------
 # MATCHING (UNCHANGED)
 # -----------------------------
@@ -164,7 +155,6 @@ def load_master_list():
 def smart_match(master_channels, parsed_channels):
     found = set()
 
-    # Exact match first
     for master in master_channels:
 
         if master in parsed_channels:
@@ -180,9 +170,8 @@ def smart_match(master_channels, parsed_channels):
 
     return found
 
-
 # -----------------------------
-# XML CREATION (WITH MANUALLY MATCHED CHANNELS)
+# XML CREATION (MODIFIED TO USE ORIGINAL IDs)
 # -----------------------------
 
 def save_merged_xml(channels):
@@ -193,39 +182,22 @@ def save_merged_xml(channels):
         ch_elem = ET.SubElement(root, "channel", id=final_name)
         ET.SubElement(ch_elem, "display-name").text = final_name
 
-    # Add the dynamically matched channels (after excluding "pacific" or "west")
-    for ch in sorted(channels):
-        if "pacific" not in ch and "west" not in ch and "tbs superstation" not in ch:
-            ch_elem = ET.SubElement(root, "channel", id=ch)
-            ET.SubElement(ch_elem, "display-name").text = ch
+    # Add dynamically matched channels using ORIGINAL IDs
+    for cleaned_name, original_id in sorted(channels.items()):
+        if "pacific" not in cleaned_name and "west" not in cleaned_name and "tbs superstation" not in cleaned_name:
+            ch_elem = ET.SubElement(root, "channel", id=original_id)
+            ET.SubElement(ch_elem, "display-name").text = cleaned_name
 
-    # Generate XML content and print it to verify it's correct
     tree = ET.ElementTree(root)
-    xml_string = ET.tostring(root, encoding='utf-8', method='xml').decode('utf-8')
-    print("Generated XML Content:")
-    print(xml_string)
 
-    # Write XML file in UTF-8 encoding with xml_declaration
     temp_xml = "temp_merged.xml"
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
 
-    # Check if the XML file is generated properly
-    print(f"XML file saved as {temp_xml}. Check if the content is correct.")
-
-    # Compress the XML file to .gz using a more robust method
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
-            f_out.writelines(f_in)  # This ensures the file is written properly
+            f_out.writelines(f_in)
 
-    # Check if the .gz file was created successfully
-    if os.path.exists(OUTPUT_XML_GZ):
-        print(f"Compressed file {OUTPUT_XML_GZ} created successfully.")
-    else:
-        print("Error: .gz file creation failed.")
-
-    # Clean up the temporary XML file after compression
     os.remove(temp_xml)
-
 
 # -----------------------------
 # GET EASTERN TIME STAMP (UNCHANGED)
@@ -235,18 +207,13 @@ def get_eastern_timestamp():
     eastern = pytz.timezone("US/Eastern")
     return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
 
-
 # -----------------------------
-# INDEX UPDATE (WITH TITLE FIX AND TIMESTAMP)
+# INDEX UPDATE (UNCHANGED)
 # -----------------------------
 
 def update_index(master, found, not_found):
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
     timestamp = get_eastern_timestamp()
-
-    # Log channels processed for debugging
-    print(f"Channels found: {len(found)}")
-    print(f"Channels not found: {len(not_found)}")
 
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
@@ -292,14 +259,13 @@ function toggle(id){{
     with open(INDEX_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
-
 # -----------------------------
-# MAIN (UNCHANGED)
+# MAIN (MINOR DICT MERGE CHANGE ONLY)
 # -----------------------------
 
 def main():
     master = load_master_list()
-    parsed_all = set()
+    parsed_all = {}
 
     for url in epg_sources:
         print(f"Fetching {url}")
@@ -309,13 +275,15 @@ def main():
 
         if url.endswith(".txt"):
             parsed = parse_txt(content)
+            for ch in parsed:
+                parsed_all[ch] = ch
         else:
             parsed = parse_xml(content)
+            parsed_all.update(parsed)
 
         print(f"Processed {url} - Parsed {len(parsed)} channels")
-        parsed_all.update(parsed)
 
-    found = smart_match(master, parsed_all)
+    found = smart_match(master, parsed_all.keys())
     not_found = master - found
 
     save_merged_xml(parsed_all)
@@ -326,4 +294,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
