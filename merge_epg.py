@@ -100,7 +100,7 @@ EPG_ALIASES = {
     "republic.tv": "Republic TV",
     "sun.tv": "Sun TV",
     "tv9": "TV9",
-    
+
     # Local / Regional
     "buzzr": "BUZZR",
     "crimes": "CRIMES",
@@ -175,7 +175,7 @@ def fetch_content(url):
 # LOCAL ID NORMALIZATION
 # -----------------------------
 def normalize_epg_id(raw_id):
-    """Remove source-specific suffixes like .us_locals1"""
+    """Remove source-specific suffixes like .us_locals1, .us_locals2, .us_locals"""
     if not raw_id:
         return ""
     local_suffixes = [".us_locals1", ".us_locals2", ".us_locals"]
@@ -207,36 +207,36 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
-            base_id = normalize_epg_id(raw_id)
+            normalized_id = normalize_epg_id(raw_id)
             display = elem.findtext("display-name") or raw_id
-            cleaned = clean_text(display)
+            cleaned_display = clean_text(display)
             matched = False
 
-            # Exact-ID alias mapping
-            if base_id in EPG_ALIASES:
+            # 1️⃣ Exact alias mapping
+            if normalized_id in EPG_ALIASES:
                 allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = EPG_ALIASES[base_id]
+                channel_id_to_display[raw_id] = EPG_ALIASES[normalized_id]
                 matched = True
 
-            # Exact cleaned master match
-            if not matched and base_id.lower() in master_cleaned:
+            # 2️⃣ Exact cleaned master match
+            if not matched and clean_text(normalized_id) in master_cleaned:
                 allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = master_cleaned[base_id.lower()]
+                channel_id_to_display[raw_id] = master_cleaned[clean_text(normalized_id)]
                 matched = True
 
-            # Substring match
+            # 3️⃣ Substring match
             if not matched:
                 for master_clean, master_disp in master_cleaned.items():
-                    if master_clean in cleaned or cleaned in master_clean:
+                    if master_clean in cleaned_display or cleaned_display in master_clean:
                         allowed_channel_ids.add(raw_id)
                         channel_id_to_display[raw_id] = master_disp
                         matched = True
                         break
 
-            # Enhanced fuzzy match
+            # 4️⃣ Fuzzy match
             if not matched:
                 for master_clean, master_disp in master_cleaned.items():
-                    if similar(cleaned, master_clean) >= 0.7 or similar(clean_text(raw_id), master_clean) >= 0.7:
+                    if similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7:
                         allowed_channel_ids.add(raw_id)
                         channel_id_to_display[raw_id] = master_disp
                         matched = True
