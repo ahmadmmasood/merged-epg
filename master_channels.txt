@@ -225,6 +225,8 @@ Busted
 HSN
 AltaVsn
 DEFY
+WNUV-DT
+Telexitos
 
 #=========================
 #REGIONAL NETWORKS – DC / BALTIMORE
