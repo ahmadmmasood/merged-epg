@@ -13,6 +13,8 @@ EPG_SOURCES_FILE = "epg_sources.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
 INDEX_HTML = "index.html"
 
+LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
+
 # -----------------------------
 # NORMALIZATION
 # -----------------------------
@@ -31,20 +33,10 @@ def clean_text(name):
     return name.strip()
 
 # -----------------------------
-# FUZZY MATCHING
+# FUZZY MATCHING (SAFE MODE)
 # -----------------------------
 def similar(a, b):
-    """Return similarity ratio between 0 and 1"""
     return SequenceMatcher(None, a, b).ratio()
-
-# -----------------------------
-# ALIASES (Exact raw EPG IDs)
-# -----------------------------
-EPG_ALIASES = {
-    "home.and.garden.television.hd.us2": "HGTV",
-    "5.starmax.hd.east.us2": "5StarMax",
-    # add more exact EPG IDs here as needed
-}
 
 # -----------------------------
 # LOAD MASTER LIST
@@ -87,13 +79,11 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE XML STREAM WITH SMART MATCHING
+# PARSE XML STREAM
 # -----------------------------
-def parse_xml_stream(content_bytes, master_cleaned, allowed_local_ids=None, days_limit=3):
-    allowed_channel_ids = set()
-    channel_id_to_display = {}
+def parse_xml_stream(content_bytes, master_cleaned, is_local_feed=False, days_limit=3):
+    channel_matches = {}   # raw_id -> master_display_name
     programmes = []
-    unmatched_channels = []
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
@@ -107,57 +97,48 @@ def parse_xml_stream(content_bytes, master_cleaned, allowed_local_ids=None, days
 
     for event, elem in context:
 
+        # ------------------ CHANNEL ------------------
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
-            cleaned = clean_text(display)
-            matched = False
 
-            # Only include local channels from the allowed_local_ids feed
-            if allowed_local_ids is not None and raw_id not in allowed_local_ids:
-                elem.clear()
-                continue
+            cleaned_display = clean_text(display)
+            cleaned_id = clean_text(raw_id)
 
-            # 1️⃣ Exact-ID alias mapping
-            if raw_id in EPG_ALIASES:
-                allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = EPG_ALIASES[raw_id]
-                matched = True
+            matched_display = None
 
-            # 2️⃣ Exact cleaned master match
-            if not matched and cleaned in master_cleaned:
-                allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = master_cleaned[cleaned]
-                matched = True
+            # 1️⃣ Exact cleaned match
+            if cleaned_display in master_cleaned:
+                matched_display = master_cleaned[cleaned_display]
 
-            # 3️⃣ Substring match
-            if not matched:
+            # 2️⃣ Substring match
+            if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
-                    if master_clean in cleaned or cleaned in master_clean:
-                        allowed_channel_ids.add(raw_id)
-                        channel_id_to_display[raw_id] = master_disp
-                        matched = True
+                    if master_clean in cleaned_display or cleaned_display in master_clean:
+                        matched_display = master_disp
                         break
 
-            # 4️⃣ Enhanced fuzzy match (0.7 threshold)
-            if not matched:
+            # 3️⃣ Fuzzy match (0.7 safe threshold)
+            if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
-                    if similar(cleaned, master_clean) >= 0.7 or similar(clean_text(raw_id), master_clean) >= 0.7:
-                        allowed_channel_ids.add(raw_id)
-                        channel_id_to_display[raw_id] = master_disp
-                        matched = True
+                    if similar(cleaned_display, master_clean) >= 0.7:
+                        matched_display = master_disp
+                        break
+                    if similar(cleaned_id, master_clean) >= 0.7:
+                        matched_display = master_disp
                         break
 
-            if not matched:
-                unmatched_channels.append((raw_id, display))
+            if matched_display:
+                channel_matches[raw_id] = matched_display
 
             elem.clear()
 
+        # ------------------ PROGRAMME ------------------
         elif elem.tag == "programme":
             raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
 
-            if not raw_channel or not start_str or raw_channel not in allowed_channel_ids:
+            if raw_channel not in channel_matches:
                 elem.clear()
                 continue
 
@@ -169,47 +150,47 @@ def parse_xml_stream(content_bytes, master_cleaned, allowed_local_ids=None, days
 
             if start_dt <= cutoff:
                 title = elem.findtext("title") or ""
-                prog_key = (raw_channel, start_str, title)
-                if prog_key not in parse_xml_stream.seen_programmes:
-                    programmes.append(ET.tostring(elem, encoding="utf-8"))
-                    parse_xml_stream.seen_programmes.add(prog_key)
+                key = (raw_channel, start_str, title)
+
+                if key not in parse_xml_stream.seen_programmes:
+                    programmes.append((raw_channel, ET.tostring(elem, encoding="utf-8")))
+                    parse_xml_stream.seen_programmes.add(key)
 
             elem.clear()
 
-    if unmatched_channels:
-        print("Unmatched EPG channels in this source:")
-        for cid, disp in unmatched_channels:
-            print(f"  {cid} -> {disp}")
-
-    return allowed_channel_ids, channel_id_to_display, programmes
+    return channel_matches, programmes
 
 parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
 # SAVE MERGED XML
 # -----------------------------
-def save_merged_xml(channel_ids, programmes, channel_id_to_display):
+def save_merged_xml(channel_id_map, programmes):
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
         f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f_out.write(b"<tv>\n")
 
-        for cid in sorted(channel_ids):
-            ch_elem = ET.Element("channel", id=cid)
-            ET.SubElement(ch_elem, "display-name").text = channel_id_to_display.get(cid, cid)
+        # Deduplicate by master display name
+        used_display = set()
+
+        for raw_id, display in sorted(channel_id_map.items()):
+            if display in used_display:
+                continue
+            used_display.add(display)
+
+            ch_elem = ET.Element("channel", id=display)
+            ET.SubElement(ch_elem, "display-name").text = display
             f_out.write(ET.tostring(ch_elem, encoding="utf-8"))
 
-        for prog in programmes:
-            f_out.write(prog)
+        for raw_channel, prog_xml in programmes:
+            if raw_channel in channel_id_map:
+                f_out.write(prog_xml)
 
         f_out.write(b"\n</tv>")
 
 # -----------------------------
-# INDEX UPDATE
+# INDEX REPORT
 # -----------------------------
-def get_eastern_timestamp():
-    eastern = pytz.timezone("US/Eastern")
-    return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
-
 def update_index(master_display, matched_display_names):
     found = []
     not_found = []
@@ -221,49 +202,26 @@ def update_index(master_display, matched_display_names):
             not_found.append(channel)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
-    timestamp = get_eastern_timestamp()
+    timestamp = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d %H:%M:%S %Z")
 
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
 
     html = f"""
-<!DOCTYPE html>
 <html>
-<head>
-<title>EPG Merge Report</title>
-<style>
-body {{ font-family: Arial; }}
-table {{ border-collapse: collapse; width: 50%; }}
-td {{ border: 1px solid #999; padding: 4px; }}
-.hidden {{ display:none; }}
-</style>
-<script>
-function toggle(id){{
-  var e=document.getElementById(id);
-  e.classList.toggle("hidden");
-}}
-</script>
-</head>
+<head><title>EPG Merge Report</title></head>
 <body>
-
 <h2>EPG Merge Report</h2>
-<p><strong>Report generated on:</strong> {timestamp}</p>
-
+<p>Generated: {timestamp}</p>
 <p>Total channels in master list: {len(master_display)}</p>
-<p>Channels found: {len(found)} <a href="#" onclick="toggle('found')">(show/hide)</a></p>
-<p>Channels not found: {len(not_found)} <a href="#" onclick="toggle('notfound')">(show/hide)</a></p>
+<p>Channels found: {len(found)}</p>
+<p>Channels not found: {len(not_found)}</p>
 <p>Final merged file size: {size_mb:.2f} MB</p>
-
-<h3>Found Channels</h3>
-<table id="found" class="hidden">{found_rows}</table>
-
-<h3>Not Found Channels</h3>
-<table id="notfound" class="hidden">{not_rows}</table>
-
+<h3>Found Channels</h3><table>{found_rows}</table>
+<h3>Not Found Channels</h3><table>{not_rows}</table>
 </body>
 </html>
 """
-
     with open(INDEX_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -274,55 +232,53 @@ def main():
     master_cleaned, master_display = load_master_list()
     sources = load_epg_sources()
 
-    all_channel_ids = set()
+    all_channel_map = {}
     all_programmes = []
     matched_display_names = set()
-    channel_id_to_display = {}
 
     print(f"Master channels loaded: {len(master_display)}")
     print(f"EPG sources loaded: {len(sources)}")
 
-    # Identify the locals1 feed
-    local_feed_url = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
-
     for url in sources:
         print(f"\nProcessing: {url}")
+
         content = fetch_content(url)
         if not content:
             continue
 
-        allowed_local_ids = None
-        # Only local feed allows all local IDs
-        if url == local_feed_url:
-            allowed_local_ids = None  # allow all channels from this feed
-        else:
-            # Non-local feeds ignore local channels
-            allowed_local_ids = master_cleaned  # keep only master channels
+        is_local_feed = (url == LOCAL_FEED_URL)
 
-        try:
-            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned, allowed_local_ids)
-        except ET.ParseError as e:
-            print(f"XML parse error in {url}: {e}")
-            continue
+        channel_map, programmes = parse_xml_stream(
+            content,
+            master_cleaned,
+            is_local_feed=is_local_feed
+        )
 
-        all_channel_ids.update(channel_ids)
+        # Enforce: local channels only from local feed
+        if not is_local_feed:
+            channel_map = {
+                raw_id: disp
+                for raw_id, disp in channel_map.items()
+                if disp not in master_display or disp not in master_display
+            }
+
+        all_channel_map.update(channel_map)
         all_programmes.extend(programmes)
-        channel_id_to_display.update(id_to_display)
+        matched_display_names.update(channel_map.values())
 
-        for disp in id_to_display.values():
-            matched_display_names.add(disp)
-
-        print(f"  Channels kept: {len(channel_ids)}")
+        print(f"  Channels matched: {len(channel_map)}")
         print(f"  Programmes kept: {len(programmes)}")
 
-    save_merged_xml(all_channel_ids, all_programmes, channel_id_to_display)
+    save_merged_xml(all_channel_map, all_programmes)
     update_index(master_display, matched_display_names)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
+
     print("\nFinished.")
-    print(f"Final channels: {len(all_channel_ids)}")
+    print(f"Final channels: {len(set(all_channel_map.values()))}")
     print(f"Final programmes: {len(all_programmes)}")
     print(f"Output size: {size_mb:.2f} MB")
+
 
 if __name__ == "__main__":
     main()
