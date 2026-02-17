@@ -34,21 +34,19 @@ def clean_text(name):
 # FUZZY MATCHING
 # -----------------------------
 def similar(a, b):
-    """Return similarity ratio between 0 and 1"""
     return SequenceMatcher(None, a, b).ratio()
 
 # -----------------------------
 # ALIASES (Exact raw EPG IDs)
 # -----------------------------
 EPG_ALIASES = {
-    # Add all known exact mappings here
-    # Example:
+    # Example: Add all known exact mappings here
     "home.and.garden.television.hd.us2": "HGTV",
     "5_starmax.hd.east.us2": "5StarMax",
     "wjla-dt": "WJLA-DT",
     "wusa-hd": "WUSA-HD",
     "buzzr": "BUZZR",
-    # Add your missing 100+ channels here
+    # Add your missing channels here
 }
 
 # -----------------------------
@@ -105,7 +103,7 @@ def normalize_epg_id(raw_id):
     return raw_id
 
 # -----------------------------
-# PARSE XML STREAM (smart + strict filtering)
+# PARSE XML STREAM (strict master list only)
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
@@ -138,20 +136,20 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
                 channel_id_to_display[raw_id] = EPG_ALIASES[normalized_id]
 
             # 2️⃣ Exact master list
-            if not matched and cleaned_display in master_cleaned:
+            elif cleaned_display in master_cleaned:
                 matched = True
                 channel_id_to_display[raw_id] = master_cleaned[cleaned_display]
 
-            # 3️⃣ Substring match
-            if not matched:
+            # 3️⃣ Substring match (master list only)
+            elif any(master_clean in cleaned_display or cleaned_display in master_clean for master_clean in master_cleaned):
                 for master_clean, master_disp in master_cleaned.items():
                     if master_clean in cleaned_display or cleaned_display in master_clean:
                         matched = True
                         channel_id_to_display[raw_id] = master_disp
                         break
 
-            # 4️⃣ Fuzzy match >=0.7
-            if not matched:
+            # 4️⃣ Fuzzy match >=0.7 (master list only)
+            elif any(similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7 for master_clean in master_cleaned):
                 for master_clean, master_disp in master_cleaned.items():
                     if similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7:
                         matched = True
