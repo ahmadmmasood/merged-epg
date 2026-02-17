@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timedelta
 from io import BytesIO
 import pytz
+from collections import defaultdict
 
 MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
@@ -28,6 +29,16 @@ def clean_text(name):
     name = regex_remove.sub(" ", name)
     name = re.sub(r"\s+", " ", name)
     return name.strip()
+
+# -----------------------------
+# ALIASES (Optional Custom Mapping)
+# -----------------------------
+EPG_ALIASES = {
+    # raw EPG id : master name
+    "home.and.garden.television.hd.us2": "HGTV",
+    "5.starmax.hd.east.us2": "5StarMax",
+    # add more as needed
+}
 
 # -----------------------------
 # LOAD MASTER LIST
@@ -70,7 +81,7 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE XML (KEEP ORIGINAL IDS)
+# PARSE XML WITH SMART MATCHING
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
@@ -94,11 +105,25 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
-            cleaned = clean_text(display)
-
-            if cleaned in master_cleaned:
+            # 1️⃣ Check alias mapping
+            if raw_id in EPG_ALIASES:
+                matched_name = EPG_ALIASES[raw_id]
                 allowed_channel_ids.add(raw_id)
-                channel_id_to_display[raw_id] = master_cleaned[cleaned]
+                channel_id_to_display[raw_id] = matched_name
+            else:
+                cleaned = clean_text(display)
+
+                # 2️⃣ Exact cleaned match
+                if cleaned in master_cleaned:
+                    allowed_channel_ids.add(raw_id)
+                    channel_id_to_display[raw_id] = master_cleaned[cleaned]
+                else:
+                    # 3️⃣ Substring match fallback
+                    for master_clean, master_disp in master_cleaned.items():
+                        if master_clean in cleaned or cleaned in master_clean:
+                            allowed_channel_ids.add(raw_id)
+                            channel_id_to_display[raw_id] = master_disp
+                            break
 
             elem.clear()
 
@@ -122,13 +147,19 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
                 continue
 
             if start_dt <= cutoff:
-                programmes.append(
-                    ET.tostring(elem, encoding="utf-8")
-                )
+                # 4️⃣ Deduplicate by channel_id + start + title
+                title = elem.findtext("title") or ""
+                prog_key = (raw_channel, start_str, title)
+                if prog_key not in parse_xml_stream.seen_programmes:
+                    programmes.append(ET.tostring(elem, encoding="utf-8"))
+                    parse_xml_stream.seen_programmes.add(prog_key)
 
             elem.clear()
 
     return allowed_channel_ids, channel_id_to_display, programmes
+
+# Initialize dedup set as static attribute
+parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
 # SAVE FINAL XML
