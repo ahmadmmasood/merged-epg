@@ -169,7 +169,7 @@ WTTG-DT
 BUZZR
 Start TV
 
-WJLA
+WJLA-DT
 Charge!
 Comet
 ROAR
@@ -189,7 +189,7 @@ WFDC-DT
 GRIT
 UniMas
 
-WDCA
+WDCA-DT
 Movies!
 Heroes & Icons
 Fox Weather
