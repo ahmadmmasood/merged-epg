@@ -31,13 +31,13 @@ def clean_text(name):
 # LOAD MASTER
 # -----------------------------
 def load_master_list():
-    master = {}
+    master_cleaned = set()
     with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                master[clean_text(line)] = line
-    return master
+                master_cleaned.add(clean_text(line))
+    return master_cleaned
 
 # -----------------------------
 # LOAD SOURCES
@@ -47,7 +47,7 @@ def load_epg_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith("#"):
+            if line and not line.startswith("#") and line.startswith("http"):
                 sources.append(line)
     return sources
 
@@ -64,16 +64,13 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# SAFE STREAM PARSE
+# PARSE XML (KEEP ORIGINAL IDS)
 # -----------------------------
-def parse_xml_stream(content_bytes, master_map, days_limit=3):
-    raw_to_master = {}
+def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
+    allowed_channel_ids = set()
     programmes = []
-    channels_with_programmes = set()
-
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
-    # Handle gz and plain xml
     try:
         f = gzip.open(BytesIO(content_bytes), "rb")
         f.peek(1)
@@ -84,26 +81,17 @@ def parse_xml_stream(content_bytes, master_map, days_limit=3):
 
     for event, elem in context:
 
-        # ------------------
-        # CHANNEL BLOCK
-        # ------------------
+        # CHANNEL
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
-            display_names = [dn.text for dn in elem.findall("display-name") if dn.text]
+            display = elem.findtext("display-name") or raw_id
 
-            possible_names = [raw_id] + display_names
-
-            for name in possible_names:
-                cleaned = clean_text(name)
-                if cleaned in master_map:
-                    raw_to_master[raw_id] = master_map[cleaned]
-                    break
+            if clean_text(display) in master_cleaned:
+                allowed_channel_ids.add(raw_id)
 
             elem.clear()
 
-        # ------------------
-        # PROGRAMME BLOCK
-        # ------------------
+        # PROGRAMME
         elif elem.tag == "programme":
             raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
@@ -112,7 +100,7 @@ def parse_xml_stream(content_bytes, master_map, days_limit=3):
                 elem.clear()
                 continue
 
-            if raw_channel not in raw_to_master:
+            if raw_channel not in allowed_channel_ids:
                 elem.clear()
                 continue
 
@@ -123,28 +111,25 @@ def parse_xml_stream(content_bytes, master_map, days_limit=3):
                 continue
 
             if start_dt <= cutoff:
-                master_name = raw_to_master[raw_channel]
-                elem.attrib["channel"] = master_name
                 programmes.append(
                     ET.tostring(elem, encoding="utf-8")
                 )
-                channels_with_programmes.add(master_name)
 
             elem.clear()
 
-    return channels_with_programmes, programmes
+    return allowed_channel_ids, programmes
 
 # -----------------------------
-# SAVE FINAL XML
+# SAVE OUTPUT
 # -----------------------------
-def save_merged_xml(channels, programmes):
+def save_merged_xml(channel_ids, programmes):
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
         f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f_out.write(b"<tv>\n")
 
-        for ch in sorted(channels):
-            ch_elem = ET.Element("channel", id=ch)
-            ET.SubElement(ch_elem, "display-name").text = ch
+        for cid in sorted(channel_ids):
+            ch_elem = ET.Element("channel", id=cid)
+            ET.SubElement(ch_elem, "display-name").text = cid
             f_out.write(ET.tostring(ch_elem, encoding="utf-8"))
 
         for prog in programmes:
@@ -156,13 +141,13 @@ def save_merged_xml(channels, programmes):
 # MAIN
 # -----------------------------
 def main():
-    master_map = load_master_list()
+    master_cleaned = load_master_list()
     sources = load_epg_sources()
 
-    all_channels = set()
+    all_channel_ids = set()
     all_programmes = []
 
-    print(f"Master channels loaded: {len(master_map)}")
+    print(f"Master channels loaded: {len(master_cleaned)}")
     print(f"EPG sources loaded: {len(sources)}")
 
     for url in sources:
@@ -171,19 +156,24 @@ def main():
         if not content:
             continue
 
-        channels, programmes = parse_xml_stream(content, master_map)
-        all_channels.update(channels)
+        try:
+            channel_ids, programmes = parse_xml_stream(content, master_cleaned)
+        except ET.ParseError as e:
+            print(f"XML parse error in {url}: {e}")
+            continue
+
+        all_channel_ids.update(channel_ids)
         all_programmes.extend(programmes)
 
-        print(f"  Channels matched: {len(channels)}")
+        print(f"  Channels kept: {len(channel_ids)}")
         print(f"  Programmes kept: {len(programmes)}")
 
-    save_merged_xml(all_channels, all_programmes)
+    save_merged_xml(all_channel_ids, all_programmes)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
 
     print("\nFinished.")
-    print(f"Final channels: {len(all_channels)}")
+    print(f"Final channels: {len(all_channel_ids)}")
     print(f"Final programmes: {len(all_programmes)}")
     print(f"Output size: {size_mb:.2f} MB")
 
