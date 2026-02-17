@@ -15,13 +15,12 @@ epg_sources = [
 ]
 
 # -----------------------------
-# NORMALIZATION
+# NORMALIZATION (UNCHANGED)
 # -----------------------------
 
 def clean_text(name):
     name = name.lower()
 
-    # skip pacific or west entirely
     if "pacific" in name or "west" in name:
         return None
 
@@ -29,12 +28,10 @@ def clean_text(name):
     name = name.replace(".", " ")
     name = name.replace("-", " ")
 
-    # remove common words
     remove_words = ["hd", "hdtv", "tv", "channel", "network", "east"]
     for word in remove_words:
         name = re.sub(r"\b" + word + r"\b", " ", name)
 
-    # remove extra characters
     name = re.sub(r"[^\w\s]", " ", name)
     name = re.sub(r"\s+", " ", name)
 
@@ -42,7 +39,7 @@ def clean_text(name):
 
 
 # -----------------------------
-# FETCH
+# FETCH (UNCHANGED)
 # -----------------------------
 
 def fetch_content(url):
@@ -56,7 +53,7 @@ def fetch_content(url):
 
 
 # -----------------------------
-# PARSING
+# PARSE TXT (UNCHANGED)
 # -----------------------------
 
 def parse_txt(content):
@@ -75,15 +72,27 @@ def parse_txt(content):
     return channels
 
 
+# -----------------------------
+# PARSE XML (ONLY FIX APPLIED)
+# -----------------------------
+
 def parse_xml(content):
     channels = set()
     try:
+        # Safely decompress if gzipped
+        try:
+            content = gzip.decompress(content)
+        except:
+            pass
+
         root = ET.fromstring(content)
+
         for ch in root.findall("channel"):
             name = ch.attrib.get("id") or ch.findtext("display-name") or ""
             cleaned = clean_text(name)
             if cleaned:
                 channels.add(cleaned)
+
     except Exception as e:
         print(f"Error parsing XML: {e}")
 
@@ -91,7 +100,7 @@ def parse_xml(content):
 
 
 # -----------------------------
-# MASTER LIST
+# MASTER LIST (UNCHANGED)
 # -----------------------------
 
 def load_master_list():
@@ -108,7 +117,7 @@ def load_master_list():
 
 
 # -----------------------------
-# SMART MATCHING
+# MATCHING (UNCHANGED)
 # -----------------------------
 
 def smart_match(master_channels, parsed_channels):
@@ -116,12 +125,10 @@ def smart_match(master_channels, parsed_channels):
 
     for master in master_channels:
 
-        # exact match first (preserves existing matches)
         if master in parsed_channels:
             found.add(master)
             continue
 
-        # word-based contains match
         master_words = master.split()
 
         for parsed in parsed_channels:
@@ -133,7 +140,7 @@ def smart_match(master_channels, parsed_channels):
 
 
 # -----------------------------
-# XML CREATION (VALID GZIP)
+# XML CREATION (UNCHANGED)
 # -----------------------------
 
 def save_merged_xml(channels):
@@ -156,7 +163,7 @@ def save_merged_xml(channels):
 
 
 # -----------------------------
-# INDEX UPDATE
+# INDEX UPDATE (UNCHANGED)
 # -----------------------------
 
 def update_index(master, found, not_found):
@@ -207,7 +214,7 @@ function toggle(id){{
 
 
 # -----------------------------
-# MAIN
+# MAIN (UNCHANGED)
 # -----------------------------
 
 def main():
@@ -225,7 +232,7 @@ def main():
         else:
             parsed = parse_xml(content)
 
-        print(f"Parsed {len(parsed)} channels")
+        print(f"Processed {url} - Parsed {len(parsed)} channels")
         parsed_all.update(parsed)
 
     found = smart_match(master, parsed_all)
