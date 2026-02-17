@@ -5,20 +5,22 @@ import xml.etree.ElementTree as ET
 import re
 from datetime import datetime, timedelta
 import pytz
+from io import BytesIO
 
 MASTER_LIST_FILE = "master_channels.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
 INDEX_HTML = "index.html"
 
-# Map non-matching IDs from sources to final names
+# Mapping from raw EPG names to desired final names (excluding locals)
 EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
-    # Add more if needed
+    # Add any other mappings here for non-local channels...
 }
 
-# Load EPG sources from a file
-EPG_SOURCES_FILE = "epg_sources.txt"
+# -----------------------------
+# Load EPG Sources from File
+# -----------------------------
 def load_epg_sources(file_path):
     epg_sources = []
     try:
@@ -31,30 +33,27 @@ def load_epg_sources(file_path):
         print(f"Error loading EPG sources from {file_path}: {e}")
     return epg_sources
 
+EPG_SOURCES_FILE = "epg_sources.txt"
 epg_sources = load_epg_sources(EPG_SOURCES_FILE)
 print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
-# Text cleaning / normalization
+# NORMALIZATION
 # -----------------------------
+remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west"]
+regex_remove = re.compile(r"[^\w\s]")
+
 def clean_text(name):
     name = name.lower()
-    name = name.replace(".", " ")
-    name = name.replace("&", " and ")
-    name = name.replace("-", " ")
-
-    # Remove common words
-    remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "pacific"]
     for word in remove_words:
         name = re.sub(r"\b" + word + r"\b", " ", name)
-
-    name = re.sub(r"[^\w\s]", " ", name)
+    name = name.replace("&", " and ").replace("-", " ")
+    name = regex_remove.sub(" ", name)
     name = re.sub(r"\s+", " ", name)
-
     return name.strip()
 
 # -----------------------------
-# Fetch content
+# FETCH
 # -----------------------------
 def fetch_content(url):
     try:
@@ -66,7 +65,7 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# Parse TXT sources
+# PARSE TXT
 # -----------------------------
 def parse_txt(content):
     channels = set()
@@ -81,27 +80,35 @@ def parse_txt(content):
     return channels
 
 # -----------------------------
-# Parse XML sources
+# PARSE XML (STREAMED)
 # -----------------------------
-def parse_xml(content):
+def parse_xml_stream(content_bytes, days_limit=3):
     channels = set()
-    try:
-        try:
-            content = gzip.decompress(content)
-        except:
-            pass
-        root = ET.fromstring(content)
-        for ch in root.findall("channel"):
-            name = ch.attrib.get("id") or ch.findtext("display-name") or ""
-            cleaned = clean_text(name)
-            if cleaned:
-                channels.add(cleaned)
-    except Exception as e:
-        print(f"Error parsing XML: {e}")
-    return channels
+    programmes = []
+    cutoff = datetime.utcnow() + timedelta(days=days_limit)
+
+    with gzip.open(BytesIO(content_bytes), "rb") as f:
+        context = ET.iterparse(f, events=("end",))
+        for event, elem in context:
+            # Collect channel IDs for mapping
+            if elem.tag == "channel":
+                ch_id = elem.attrib.get("id")
+                ch_name = elem.findtext("display-name") or ch_id
+                # Skip cleaning for local channels (keep as-is if in master)
+                channels.add(ch_name.strip())
+                elem.clear()
+            # Collect programme elements within 3-day limit
+            elif elem.tag == "programme":
+                start_str = elem.attrib.get("start")
+                if start_str:
+                    start_dt = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
+                    if start_dt <= cutoff:
+                        programmes.append(ET.tostring(elem, encoding="utf-8"))
+                elem.clear()
+    return channels, programmes
 
 # -----------------------------
-# Master list
+# MASTER LIST
 # -----------------------------
 def load_master_list():
     master = set()
@@ -110,111 +117,63 @@ def load_master_list():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            cleaned = clean_text(line)
-            if cleaned:
-                master.add(cleaned)
+            master.add(line)  # keep as-is for locals
     return master
 
 # -----------------------------
-# Smart match logic
+# MATCHING
 # -----------------------------
 def smart_match(master_channels, parsed_channels):
     found = set()
     for master in master_channels:
-        if master in parsed_channels:
-            found.add(master)
-            continue
-        master_words = master.split()
+        master_clean = clean_text(master)
+        # Exact match
         for parsed in parsed_channels:
-            if all(word in parsed for word in master_words):
+            parsed_clean = clean_text(parsed)
+            if master_clean == parsed_clean or master in parsed or parsed in master:
                 found.add(master)
                 break
     return found
 
 # -----------------------------
-# Save merged XML incrementally
+# SAVE MERGED XML
 # -----------------------------
-def save_merged_xml(channels, xml_sources):
+def save_merged_xml(channels, programmes):
+    root = ET.Element("tv")
+    # Add manually matched channels
+    for epg_name, final_name in EPG_TO_FINAL_NAME.items():
+        ch_elem = ET.SubElement(root, "channel", id=final_name)
+        ET.SubElement(ch_elem, "display-name").text = final_name
+    # Add channels from master/XML
+    for ch in sorted(channels):
+        ch_elem = ET.SubElement(root, "channel", id=ch)
+        ET.SubElement(ch_elem, "display-name").text = ch
+    # Write XML incrementally to temp file
     temp_xml = "temp_merged.xml"
-    three_days_utc = datetime.utcnow() + timedelta(days=3)
-
-    # Open temporary XML file
-    with open(temp_xml, "w", encoding="utf-8") as f_out:
-        f_out.write('<?xml version="1.0" encoding="UTF-8"?>\n<tv>\n')
-
-        # Write manually mapped channels
-        for epg_name, final_name in EPG_TO_FINAL_NAME.items():
-            f_out.write(f'  <channel id="{final_name}">\n')
-            f_out.write(f'    <display-name>{final_name}</display-name>\n')
-            f_out.write('  </channel>\n')
-
-        # Write dynamically found channels
-        for ch in sorted(channels):
-            f_out.write(f'  <channel id="{ch}">\n')
-            f_out.write(f'    <display-name>{ch}</display-name>\n')
-            f_out.write('  </channel>\n')
-
-        # Now iterate XML sources and write <programme> incrementally
-        for url in xml_sources:
-            if not url.endswith(".xml.gz"):
-                continue
-            print(f"Fetching XML {url}")
-            content = fetch_content(url)
-            if not content:
-                continue
-            try:
-                try:
-                    content = gzip.decompress(content)
-                except:
-                    pass
-
-                # Stream parsing for memory efficiency
-                for event, elem in ET.iterparse(
-                    bytes(content), events=("end",)
-                ):
-                    if elem.tag == "programme":
-                        start_str = elem.attrib.get("start")
-                        if start_str:
-                            try:
-                                start_dt = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
-                                if start_dt > three_days_utc:
-                                    elem.clear()
-                                    continue
-                            except:
-                                pass
-                        # Write programme element
-                        xml_string = ET.tostring(elem, encoding="utf-8").decode("utf-8")
-                        f_out.write(f"{xml_string}\n")
-                        elem.clear()
-            except Exception as e:
-                print(f"Error streaming XML from {url}: {e}")
-
-        f_out.write("</tv>\n")
-
-    # Compress to .gz
-    with open(temp_xml, "rb") as f_in:
-        with gzip.open(OUTPUT_XML_GZ, "wb") as f_out_gz:
-            f_out_gz.writelines(f_in)
-
+    tree = ET.ElementTree(root)
+    tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
+    # Append programmes
+    with gzip.open(OUTPUT_XML_GZ, "wb") as f_out, open(temp_xml, "rb") as f_in:
+        f_out.writelines(f_in)
+        for prog in programmes:
+            f_out.write(prog)
     os.remove(temp_xml)
-    print(f"Compressed XML saved to {OUTPUT_XML_GZ}")
 
 # -----------------------------
-# Timestamp for index
+# TIMESTAMP
 # -----------------------------
 def get_eastern_timestamp():
     eastern = pytz.timezone("US/Eastern")
     return datetime.now(eastern).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 # -----------------------------
-# Update index.html
+# INDEX UPDATE
 # -----------------------------
 def update_index(master, found, not_found):
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
     timestamp = get_eastern_timestamp()
     found_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(found))
     not_rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(not_found))
-
     html = f"""
 <!DOCTYPE html>
 <html>
@@ -260,28 +219,27 @@ function toggle(id){{
 # -----------------------------
 def main():
     master = load_master_list()
-    parsed_all = set()
+    parsed_all_channels = set()
+    all_programmes = []
 
-    # First parse all TXT or XML sources for channel discovery
     for url in epg_sources:
-        print(f"Processing {url}")
+        print(f"Fetching {url}")
         content = fetch_content(url)
         if not content:
             continue
         if url.endswith(".txt"):
             parsed = parse_txt(content)
+            parsed_all_channels.update(parsed)
         else:
-            parsed = parse_xml(content)
-        print(f"Parsed {len(parsed)} channels from {url}")
-        parsed_all.update(parsed)
+            channels, programmes = parse_xml_stream(content)
+            parsed_all_channels.update(channels)
+            all_programmes.extend(programmes)
+            print(f"Processed XML {url} - {len(channels)} channels, {len(programmes)} programmes")
 
-    found = smart_match(master, parsed_all)
+    found = smart_match(master, parsed_all_channels)
     not_found = master - found
 
-    # Save merged XML including <programme> elements (3-day limit)
-    save_merged_xml(parsed_all, epg_sources)
-
-    # Update index.html
+    save_merged_xml(parsed_all_channels, all_programmes)
     update_index(master, found, not_found)
 
     print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
