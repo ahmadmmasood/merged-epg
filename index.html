@@ -1,52 +1,46 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>EPG Merge Status</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1, h2 { margin-bottom: 5px; }
-        p { margin: 2px 0; }
-        table { border-collapse: collapse; width: 100%; max-width: 700px; font-size: 14px; }
-        th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .found { background-color: #d4edda; }
-        .notfound { background-color: #f8d7da; }
-        button { margin: 5px 0; padding: 5px 10px; }
-        .container { margin-bottom: 20px; }
-    </style>
+<meta charset="utf-8">
+<title>iEPG Merge Report</title>
+<style>
+body { font-family: Arial, sans-serif; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+.details { display: none; }
+.toggle { cursor: pointer; color: blue; text-decoration: underline; }
+</style>
+<script>
+function toggle(id) {
+    var e = document.getElementById(id);
+    e.style.display = (e.style.display === 'none') ? 'table-row-group' : 'none';
+}
+</script>
 </head>
 <body>
-    <h1>EPG Merge Status</h1>
-    <p><strong>Last updated:</strong> 2026-02-16 14:02:47</p>
-    <p><strong>Total channels in master list:</strong> 0</p>
-    <p><strong>Channels found:</strong> 0</p>
-    <p><strong>Channels not found:</strong> 0</p>
-    <p><strong>Final merged file size:</strong> 0.00 MB</p>
+<h2>iEPG Merge Report</h2>
+<p>Total channels in master list: 0</p>
+<p>Channels found: 0 (<span class="toggle" onclick="toggle('found')">show/hide</span>)</p>
+<p>Channels not found: 0 (<span class="toggle" onclick="toggle('notfound')">show/hide</span>)</p>
+<p>Final merged file size: 0.00 MB</p>
 
-    <div class="container">
-        <h2>Channels Found</h2>
-        <button onclick="document.getElementById('found').style.display='block'">Show Found</button>
-        <button onclick="document.getElementById('found').style.display='none'">Hide Found</button>
-        <div id="found" style="display:none;">
-            <table>
-                <tr><th>Channel Name</th></tr>
-                <!-- Populated dynamically from merge_epg.py -->
-            </table>
-        </div>
-    </div>
+<table id="found" class="details">
+<thead>
+<tr><th>Master Channel</th><th>EPG Channel</th></tr>
+</thead>
+<tbody>
+<!-- Found channels will populate here dynamically -->
+</tbody>
+</table>
 
-    <div class="container">
-        <h2>Channels Not Found</h2>
-        <button onclick="document.getElementById('notfound').style.display='block'">Show Not Found</button>
-        <button onclick="document.getElementById('notfound').style.display='none'">Hide Not Found</button>
-        <div id="notfound" style="display:none;">
-            <table>
-                <tr><th>Channel Name</th></tr>
-                <!-- Populated dynamically from merge_epg.py -->
-            </table>
-        </div>
-    </div>
+<table id="notfound" class="details">
+<thead>
+<tr><th>Master Channel</th></tr>
+</thead>
+<tbody>
+<!-- Not found channels will populate here dynamically -->
+</tbody>
+</table>
 </body>
 </html>
 
