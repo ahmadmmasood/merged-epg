@@ -38,13 +38,12 @@ def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 # -----------------------------
-# ALIASES (Optional Custom Mapping)
+# ALIASES (Exact raw EPG IDs)
 # -----------------------------
 EPG_ALIASES = {
-    # raw EPG id : master display name
     "home.and.garden.television.hd.us2": "HGTV",
     "5.starmax.hd.east.us2": "5StarMax",
-    # Add more known mismatches here
+    # Add other known exact EPG IDs here
 }
 
 # -----------------------------
@@ -88,12 +87,13 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# PARSE XML STREAM WITH SMART + FUZZY MATCH
+# PARSE XML STREAM WITH SMART + ENHANCED FUZZY MATCH
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     allowed_channel_ids = set()
     channel_id_to_display = {}
     programmes = []
+    unmatched_channels = []
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
@@ -108,30 +108,26 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
     for event, elem in context:
 
-        # CHANNEL
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
-
+            cleaned = clean_text(display)
             matched = False
 
-            # 1️⃣ Alias mapping
+            # 1️⃣ Exact-ID alias mapping
             if raw_id in EPG_ALIASES:
                 allowed_channel_ids.add(raw_id)
                 channel_id_to_display[raw_id] = EPG_ALIASES[raw_id]
                 matched = True
 
-            if not matched:
-                cleaned = clean_text(display)
+            # 2️⃣ Exact cleaned master match
+            if not matched and cleaned in master_cleaned:
+                allowed_channel_ids.add(raw_id)
+                channel_id_to_display[raw_id] = master_cleaned[cleaned]
+                matched = True
 
-                # 2️⃣ Exact cleaned match
-                if cleaned in master_cleaned:
-                    allowed_channel_ids.add(raw_id)
-                    channel_id_to_display[raw_id] = master_cleaned[cleaned]
-                    matched = True
-
+            # 3️⃣ Substring match
             if not matched:
-                # 3️⃣ Substring match
                 for master_clean, master_disp in master_cleaned.items():
                     if master_clean in cleaned or cleaned in master_clean:
                         allowed_channel_ids.add(raw_id)
@@ -139,27 +135,25 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
                         matched = True
                         break
 
+            # 4️⃣ Enhanced fuzzy match (0.7 threshold)
             if not matched:
-                # 4️⃣ Fuzzy match fallback (≥80%)
                 for master_clean, master_disp in master_cleaned.items():
-                    if similar(cleaned, master_clean) >= 0.8:
+                    if similar(cleaned, master_clean) >= 0.7 or similar(clean_text(raw_id), master_clean) >= 0.7:
                         allowed_channel_ids.add(raw_id)
                         channel_id_to_display[raw_id] = master_disp
                         matched = True
                         break
 
+            if not matched:
+                unmatched_channels.append((raw_id, display))
+
             elem.clear()
 
-        # PROGRAMME
         elif elem.tag == "programme":
             raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
 
-            if not raw_channel or not start_str:
-                elem.clear()
-                continue
-
-            if raw_channel not in allowed_channel_ids:
+            if not raw_channel or not start_str or raw_channel not in allowed_channel_ids:
                 elem.clear()
                 continue
 
@@ -170,7 +164,6 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
                 continue
 
             if start_dt <= cutoff:
-                # Deduplicate programmes by channel + start + title
                 title = elem.findtext("title") or ""
                 prog_key = (raw_channel, start_str, title)
                 if prog_key not in parse_xml_stream.seen_programmes:
@@ -179,9 +172,14 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
             elem.clear()
 
+    if unmatched_channels:
+        print("Unmatched EPG channels in this source:")
+        for cid, disp in unmatched_channels:
+            print(f"  {cid} -> {disp}")
+
     return allowed_channel_ids, channel_id_to_display, programmes
 
-# Static attribute to hold seen programme keys
+# Keep track of deduplicated programmes
 parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
