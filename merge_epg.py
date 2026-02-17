@@ -15,7 +15,7 @@ EPG_TO_FINAL_NAME = {
     "home.and.garden.television.hd.us2": "hgtv",
     "5.starmax.hd.east.us2": "5starmax",
     "wjla-dt": "abc",
-    "wdcw-dt": "cd",
+    "wdcw-dt": "cw",
     "wttg-dt": "fox",
     "wdca-dt": "foxplus",
     "wrc-dt": "nbc",
@@ -41,7 +41,7 @@ epg_sources = load_epg_sources(EPG_SOURCES_FILE)
 print(f"Loaded {len(epg_sources)} EPG sources from {EPG_SOURCES_FILE}")
 
 # -----------------------------
-# CLEANING FUNCTION (UNCHANGED)
+# CLEANING FUNCTION (FOR MATCHING ONLY)
 # -----------------------------
 def clean_text(name):
     name = name.lower()
@@ -88,10 +88,10 @@ def parse_txt(content):
     return channels
 
 # -----------------------------
-# PARSE XML (PRESERVE ORIGINAL IDs)
+# PARSE XML (STORE ID, DISPLAY-NAME, PROGRAMMES)
 # -----------------------------
 def parse_xml(content):
-    channels = {}  # key = cleaned display-name, value = original ID
+    channels = {}  # key=cleaned_name, value=dict with id, display_name, programmes
     try:
         try:
             content = gzip.decompress(content)
@@ -102,8 +102,15 @@ def parse_xml(content):
             original_id = ch.attrib.get("id", "")
             display_name = ch.findtext("display-name") or original_id
             cleaned = clean_text(display_name)
-            if cleaned:
-                channels[cleaned] = original_id
+            if not cleaned:
+                continue
+            # Find all programmes for this channel
+            programmes = [prog for prog in root.findall("programme") if prog.attrib.get("channel") == original_id]
+            channels[cleaned] = {
+                "id": original_id,
+                "display_name": display_name,
+                "programmes": programmes
+            }
     except Exception as e:
         print(f"Error parsing XML: {e}")
     return channels
@@ -140,20 +147,31 @@ def smart_match(master_channels, parsed_channels):
     return found
 
 # -----------------------------
-# SAVE MERGED XML
+# SAVE MERGED XML (INCLUDE PROGRAMMES)
 # -----------------------------
 def save_merged_xml(channels):
     root = ET.Element("tv")
-    for cleaned_name, original_id in sorted(channels.items()):
+
+    # Add channels
+    for cleaned_name, info in sorted(channels.items()):
         if "pacific" in cleaned_name or "west" in cleaned_name or "tbs superstation" in cleaned_name:
             continue
+        original_id = info["id"]
+        original_display_name = info["display_name"]
+        programmes = info.get("programmes", [])
+
         final_id = EPG_TO_FINAL_NAME.get(original_id, original_id)
         ch_elem = ET.SubElement(root, "channel", id=final_id)
-        ET.SubElement(ch_elem, "display-name").text = cleaned_name
+        ET.SubElement(ch_elem, "display-name").text = original_display_name
+
+        # Append all programme elements
+        for prog in programmes:
+            root.append(prog)
 
     tree = ET.ElementTree(root)
     temp_xml = "temp_merged.xml"
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
+
     with open(temp_xml, "rb") as f_in:
         with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
             f_out.writelines(f_in)
@@ -222,7 +240,7 @@ def main():
     master = load_master_list()
     parsed_all = {}
 
-    # 1️⃣ First process XML sources for all IDs
+    # 1️⃣ Process XML sources first
     for url in epg_sources:
         if url.endswith(".xml") or url.endswith(".xml.gz"):
             print(f"Fetching XML {url}")
@@ -233,7 +251,7 @@ def main():
             parsed_all.update(parsed)
             print(f"Processed {url} - Parsed {len(parsed)} channels")
 
-    # 2️⃣ Then process TXT sources only for matching
+    # 2️⃣ Process TXT sources for matching only
     for url in epg_sources:
         if url.endswith(".txt"):
             print(f"Fetching TXT {url}")
@@ -241,10 +259,9 @@ def main():
             if not content:
                 continue
             parsed_txt = parse_txt(content)
-            # TXT used only for matching, don't add IDs
             for ch in parsed_txt:
                 if ch not in parsed_all:
-                    parsed_all[ch] = None
+                    parsed_all[ch] = {"id": None, "display_name": ch, "programmes": []}
             print(f"Processed {url} - Parsed {len(parsed_txt)} channels (for matching)")
 
     found = smart_match(master, parsed_all.keys())
@@ -254,7 +271,6 @@ def main():
     update_index(master, found, not_found)
 
     print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
-
 
 if __name__ == "__main__":
     main()
