@@ -218,7 +218,7 @@ def save_merged_xml(channels):
 
     temp_xml = "temp_merged.xml"
 
-    # Write XML file in UTF-8 encoding
+    # Write XML file in UTF-8 encoding with xml_declaration
     tree.write(temp_xml, encoding="utf-8", xml_declaration=True)
 
     # Compress the XML file to .gz
@@ -283,5 +283,50 @@ function toggle(id){{
 <p>Final merged file size: {size_mb:.2f} MB</p>
 
 <h3>Found Channels</h3>
-<table id="found" class="
+<table id="found" class="hidden">{found_rows}</table>
+
+<h3>Not Found Channels</h3>
+<table id="notfound" class="hidden">{not_rows}</table>
+
+</body>
+</html>
+"""
+
+    with open(INDEX_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+# -----------------------------
+# MAIN (UNCHANGED)
+# -----------------------------
+
+def main():
+    master = load_master_list()
+    parsed_all = set()
+
+    for url in epg_sources:
+        print(f"Fetching {url}")
+        content = fetch_content(url)
+        if not content:
+            continue
+
+        if url.endswith(".txt"):
+            parsed = parse_txt(content)
+        else:
+            parsed = parse_xml(content)
+
+        print(f"Processed {url} - Parsed {len(parsed)} channels")
+        parsed_all.update(parsed)
+
+    found = smart_match(master, parsed_all)
+    not_found = master - found
+
+    save_merged_xml(parsed_all)
+    update_index(master, found, not_found)
+
+    print(f"Final merged file size: {os.path.getsize(OUTPUT_XML_GZ)/(1024*1024):.2f} MB")
+
+
+if __name__ == "__main__":
+    main()
 
