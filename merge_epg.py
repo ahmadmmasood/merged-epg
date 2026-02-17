@@ -13,6 +13,8 @@ EPG_SOURCES_FILE = "epg_sources.txt"
 OUTPUT_XML_GZ = "merged.xml.gz"
 INDEX_HTML = "index.html"
 
+LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
+
 # -----------------------------
 # NORMALIZATION
 # -----------------------------
@@ -40,13 +42,13 @@ def similar(a, b):
 # ALIASES (Exact raw EPG IDs)
 # -----------------------------
 EPG_ALIASES = {
-    # Example: Add all known exact mappings here
+    # Add your known mappings here
     "home.and.garden.television.hd.us2": "HGTV",
     "5_starmax.hd.east.us2": "5StarMax",
     "wjla-dt": "WJLA-DT",
     "wusa-hd": "WUSA-HD",
     "buzzr": "BUZZR",
-    # Add your missing channels here
+    # Add more missing channels here
 }
 
 # -----------------------------
@@ -73,8 +75,9 @@ def load_epg_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith("#") and line.startswith("http"):
+            if line and not line.startswith("#") and line.startswith("http") and line != LOCAL_FEED_URL:
                 sources.append(line)
+    # Local feed is handled separately
     return sources
 
 # -----------------------------
@@ -90,22 +93,9 @@ def fetch_content(url):
         return None
 
 # -----------------------------
-# NORMALIZE EPG IDs
+# PARSE XML STREAM
 # -----------------------------
-def normalize_epg_id(raw_id):
-    """Remove source-specific suffixes like .us_locals1, .us_locals2, .us_locals"""
-    if not raw_id:
-        return ""
-    local_suffixes = [".us_locals1", ".us_locals2", ".us_locals"]
-    for suffix in local_suffixes:
-        if raw_id.lower().endswith(suffix):
-            return raw_id[: -len(suffix)]
-    return raw_id
-
-# -----------------------------
-# PARSE XML STREAM (strict master list only)
-# -----------------------------
-def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
+def parse_xml_stream(content_bytes, master_cleaned, allowed_master_channels, days_limit=3, local_only=False):
     allowed_channel_ids = set()
     channel_id_to_display = {}
     programmes = []
@@ -113,7 +103,6 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
 
-    # Try gzip first, fallback to raw bytes
     try:
         f = gzip.open(BytesIO(content_bytes), "rb")
         f.peek(1)
@@ -125,48 +114,36 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=3):
     for event, elem in context:
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
-            normalized_id = normalize_epg_id(raw_id)
             display = elem.findtext("display-name") or raw_id
             cleaned_display = clean_text(display)
+            canonical_id = raw_id.lower()
             matched = False
 
-            # 1️⃣ Exact alias
-            if normalized_id in EPG_ALIASES:
-                matched = True
-                channel_id_to_display[raw_id] = EPG_ALIASES[normalized_id]
+            # Skip non-local channels if local_only=True
+            if local_only and canonical_id not in allowed_master_channels:
+                elem.clear()
+                continue
 
-            # 2️⃣ Exact master list
+            # Exact alias mapping
+            if canonical_id in EPG_ALIASES:
+                matched = True
+                channel_id_to_display[canonical_id] = EPG_ALIASES[canonical_id]
+
+            # Exact match to master list
             elif cleaned_display in master_cleaned:
                 matched = True
-                channel_id_to_display[raw_id] = master_cleaned[cleaned_display]
-
-            # 3️⃣ Substring match (master list only)
-            elif any(master_clean in cleaned_display or cleaned_display in master_clean for master_clean in master_cleaned):
-                for master_clean, master_disp in master_cleaned.items():
-                    if master_clean in cleaned_display or cleaned_display in master_clean:
-                        matched = True
-                        channel_id_to_display[raw_id] = master_disp
-                        break
-
-            # 4️⃣ Fuzzy match >=0.7 (master list only)
-            elif any(similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7 for master_clean in master_cleaned):
-                for master_clean, master_disp in master_cleaned.items():
-                    if similar(cleaned_display, master_clean) >= 0.7 or similar(clean_text(normalized_id), master_clean) >= 0.7:
-                        matched = True
-                        channel_id_to_display[raw_id] = master_disp
-                        break
+                channel_id_to_display[canonical_id] = master_cleaned[cleaned_display]
 
             if matched:
-                allowed_channel_ids.add(raw_id)
+                allowed_channel_ids.add(canonical_id)
             else:
-                unmatched_channels.append((raw_id, display))
+                unmatched_channels.append((canonical_id, display))
 
             elem.clear()
 
         elif elem.tag == "programme":
-            raw_channel = elem.attrib.get("channel")
+            raw_channel = elem.attrib.get("channel", "").lower()
             start_str = elem.attrib.get("start")
-
             if not raw_channel or not start_str or raw_channel not in allowed_channel_ids:
                 elem.clear()
                 continue
@@ -198,7 +175,7 @@ parse_xml_stream.seen_programmes = set()
 # -----------------------------
 # SAVE MERGED XML
 # -----------------------------
-def save_merged_xml(channel_ids, programmes):
+def save_merged_xml(channel_ids, programmes, channel_id_to_display):
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
         f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f_out.write(b"<tv>\n")
@@ -285,6 +262,7 @@ def main():
     channel_id_to_display = {}
 
     master_cleaned, master_display = load_master_list()
+    allowed_master_channels = set(clean_text(c) for c in master_display)
     sources = load_epg_sources()
 
     all_channel_ids = set()
@@ -292,8 +270,9 @@ def main():
     matched_display_names = set()
 
     print(f"Master channels loaded: {len(master_display)}")
-    print(f"EPG sources loaded: {len(sources)}")
+    print(f"EPG sources loaded: {len(sources) + 1} (including locals feed)")
 
+    # 1️⃣ Process all non-local feeds
     for url in sources:
         print(f"\nProcessing: {url}")
         content = fetch_content(url)
@@ -301,7 +280,7 @@ def main():
             continue
 
         try:
-            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned)
+            channel_ids, id_to_display, programmes = parse_xml_stream(content, master_cleaned, allowed_master_channels)
         except ET.ParseError as e:
             print(f"XML parse error in {url}: {e}")
             continue
@@ -309,14 +288,30 @@ def main():
         all_channel_ids.update(channel_ids)
         all_programmes.extend(programmes)
         channel_id_to_display.update(id_to_display)
-
-        for disp in id_to_display.values():
-            matched_display_names.add(disp)
+        matched_display_names.update(id_to_display.values())
 
         print(f"  Channels kept: {len(channel_ids)}")
         print(f"  Programmes kept: {len(programmes)}")
 
-    save_merged_xml(all_channel_ids, all_programmes)
+    # 2️⃣ Process local channels only from local feed
+    print(f"\nProcessing local feed: {LOCAL_FEED_URL}")
+    local_content = fetch_content(LOCAL_FEED_URL)
+    if local_content:
+        try:
+            channel_ids, id_to_display, programmes = parse_xml_stream(
+                local_content, master_cleaned, allowed_master_channels, local_only=True
+            )
+        except ET.ParseError as e:
+            print(f"XML parse error in local feed: {e}")
+        else:
+            all_channel_ids.update(channel_ids)
+            all_programmes.extend(programmes)
+            channel_id_to_display.update(id_to_display)
+            matched_display_names.update(id_to_display.values())
+            print(f"  Local channels kept: {len(channel_ids)}")
+            print(f"  Local programmes kept: {len(programmes)}")
+
+    save_merged_xml(all_channel_ids, all_programmes, channel_id_to_display)
     update_index(master_display, matched_display_names)
 
     size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
