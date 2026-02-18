@@ -96,7 +96,7 @@ def fetch_content(url):
 # PARSE XML STREAM
 # -----------------------------
 def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7):
-    channel_matches = {}   # raw_id -> master_display_name (for non-local)
+    channel_matches = {}   # raw_id -> master_display_name
     programmes = []
 
     cutoff = datetime.utcnow() + timedelta(days=days_limit)
@@ -116,28 +116,32 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
-            # --- Skip any channel with "pacific" in the name ---
+            # Skip channels containing "pacific"
             if "pacific" in display.lower():
                 elem.clear()
                 continue
 
-            # --- LOCAL DT CHANNELS --- exact match only
+            # Deduplicate repeated <icon> in channel
+            icons = elem.findall("icon")
+            for i, icon in enumerate(icons):
+                if i > 0:
+                    elem.remove(icon)
+
+            # Local DT channels: exact match
             if display in local_channels:
                 channel_matches[raw_id] = display
-                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve channel XML exactly
+                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
                 elem.clear()
                 continue
 
-            # --- NON-LOCAL CHANNELS --- existing matching logic
+            # Non-local channels: previous matching logic
             cleaned_display = clean_text(display)
             cleaned_id = clean_text(raw_id)
             matched_display = None
 
-            # 1️⃣ Exact cleaned match
             if cleaned_display in master_cleaned:
                 matched_display = master_cleaned[cleaned_display]
 
-            # 2️⃣ Token subset match
             if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
                     master_tokens = set(master_clean.split())
@@ -147,39 +151,31 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
                         matched_display = master_disp
                         break
 
-            # 3️⃣ Fuzzy match
             if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
                     if similar(cleaned_display, master_clean) >= 0.7 or similar(cleaned_id, master_clean) >= 0.7:
                         matched_display = master_disp
                         break
 
-            # 4️⃣ Smart matching layer
-            if not matched_display:
-                feed_norm = re.sub(r"[._-]", " ", display.lower())
-                feed_norm = re.sub(r"\b(hd|us|us2)\b", "", feed_norm)
-                feed_norm = re.sub(r"\s+", " ", feed_norm).strip()
-
-                for master_clean, master_disp in master_cleaned.items():
-                    master_norm = master_clean.lower()
-                    master_norm = re.sub(r"[._-]", " ", master_norm)
-                    master_norm = re.sub(r"\s+", " ", master_norm).strip()
-
-                    master_words = master_norm.split()
-                    if all(any(word in feed_token for feed_token in feed_norm.split()) for word in master_words):
-                        matched_display = master_disp
-                        break
-                    if similar(feed_norm, master_norm) >= 0.8:
-                        matched_display = master_disp
-                        break
-
             if matched_display:
-                # --- Skip any matched non-local channel containing "pacific" ---
                 if "pacific" in matched_display.lower():
                     elem.clear()
                     continue
                 channel_matches[raw_id] = matched_display
-                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve XML exactly
+
+                # Deduplicate <icon> in programme element
+                icons_prog = elem.findall("icon")
+                for i, icon in enumerate(icons_prog):
+                    if i > 0:
+                        elem.remove(icon)
+
+                # Remove empty optional tags
+                for empty_tag in ["premiere", "previously-shown"]:
+                    for t in elem.findall(empty_tag):
+                        if not (t.text and t.text.strip()):
+                            elem.remove(t)
+
+                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
 
             elem.clear()
 
@@ -202,6 +198,17 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
             if start_dt <= cutoff:
                 key = (raw_channel, start_str, ET.tostring(elem, encoding="utf-8"))
                 if key not in parse_xml_stream.seen_programmes:
+                    # Deduplicate <icon> in programme element
+                    icons_prog = elem.findall("icon")
+                    for i, icon in enumerate(icons_prog):
+                        if i > 0:
+                            elem.remove(icon)
+                    # Remove empty optional tags
+                    for empty_tag in ["premiere", "previously-shown"]:
+                        for t in elem.findall(empty_tag):
+                            if not (t.text and t.text.strip()):
+                                elem.remove(t)
+
                     programmes.append((raw_channel, ET.tostring(elem, encoding="utf-8")))
                     parse_xml_stream.seen_programmes.add(key)
 
@@ -221,12 +228,10 @@ def save_merged_xml(channel_id_map, programmes):
 
         written_channels = set()
         for raw_id, prog_xml in programmes:
-            # Ensure each channel element is written once
             if prog_xml.startswith(b"<channel") and raw_id not in written_channels:
                 f_out.write(prog_xml)
                 written_channels.add(raw_id)
 
-        # Write programmes as-is
         for raw_id, prog_xml in programmes:
             if not prog_xml.startswith(b"<channel"):
                 f_out.write(prog_xml)
@@ -240,14 +245,14 @@ def update_index(master_display, matched_display_names):
     found = []
     not_found = []
 
+    size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
+    timestamp = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d %H:%M:%S %Z")
+
     for channel in master_display:
         if channel in matched_display_names:
             found.append(channel)
         else:
             not_found.append(channel)
-
-    size_mb = os.path.getsize(OUTPUT_XML_GZ) / (1024 * 1024)
-    timestamp = datetime.now(pytz.timezone("US/Eastern")).strftime("%Y-%m-%d %H:%M:%S %Z")
 
     def make_table(ch_list):
         rows = "".join(f"<tr><td>{c}</td></tr>" for c in sorted(ch_list))
@@ -269,6 +274,7 @@ details {{margin-bottom: 10px;}}
 <p>Total channels in master list: {len(master_display)}</p>
 <p>Channels found: {len(found)}</p>
 <p>Channels not found: {len(not_found)}</p>
+<p>Final merged XML.GZ size: {size_mb:.2f} MB</p>
 
 <h3>Found Channels</h3>{make_table(found)}
 <h3>Not Found Channels</h3>{make_table(not_found)}
@@ -309,7 +315,6 @@ def main():
             local_channels
         )
 
-        # Keep local channels only from local feed
         if is_local_feed:
             channel_map = {raw: disp for raw, disp in channel_map.items() if disp in local_channels}
         else:
