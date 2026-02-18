@@ -116,10 +116,15 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
+            # --- Skip any channel with "pacific" in the name ---
+            if "pacific" in display.lower():
+                elem.clear()
+                continue
+
             # --- LOCAL DT CHANNELS --- exact match only
             if display in local_channels:
-                channel_matches[raw_id] = display  # map ID for merging, but don't change XML
-                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve channel as-is
+                channel_matches[raw_id] = display
+                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve channel XML exactly
                 elem.clear()
                 continue
 
@@ -169,8 +174,12 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
                         break
 
             if matched_display:
+                # --- Skip any matched non-local channel containing "pacific" ---
+                if "pacific" in matched_display.lower():
+                    elem.clear()
+                    continue
                 channel_matches[raw_id] = matched_display
-                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve XML fully
+                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))  # preserve XML exactly
 
             elem.clear()
 
