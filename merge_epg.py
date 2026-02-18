@@ -181,27 +181,53 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
 parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
-# SAVE MERGED XML
+# SAVE MERGED XML (APP-COMPATIBLE)
 # -----------------------------
 def save_merged_xml(channel_id_map, programmes):
+    """
+    Save merged XML in a format compatible with EPG apps.
+
+    channel_id_map: dict {raw_id -> master display name}
+    programmes: list of tuples (raw_channel, prog_xml_bytes)
+    """
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
         f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
-        f_out.write(b"<tv>\n")
+        f_out.write(b"<tv generator-info-name=\"CustomEPG\">\n")
 
         used_display = set()
         for raw_id, display in sorted(channel_id_map.items()):
             if display in used_display:
                 continue
             used_display.add(display)
-            ch_elem = ET.Element("channel", id=display)
-            ET.SubElement(ch_elem, "display-name").text = display
+
+            # Create channel element with original raw_id
+            ch_elem = ET.Element("channel", id=raw_id)
+
+            # Optional: preserve icons and url if needed
+            # If you want to include default placeholders:
+            ET.SubElement(ch_elem, "icon", src="http://dshm.tmsimg.com/assets/s28708_ll_h15_ac.png?w=360&amp;h=270")
+            ET.SubElement(ch_elem, "url").text = "http://www.tmsapi.com"
+
+            # Display name using master name
+            ET.SubElement(ch_elem, "display-name", lang="en").text = display
+
             f_out.write(ET.tostring(ch_elem, encoding="utf-8"))
 
+        # Write all programmes
         for raw_channel, prog_xml in programmes:
             if raw_channel in channel_id_map:
-                f_out.write(prog_xml)
+                prog_elem = ET.fromstring(prog_xml)
+
+                # Replace empty <premiere> with <previously-shown />
+                premiere = prog_elem.find("premiere")
+                if premiere is not None and (premiere.text is None or premiere.text.strip() == ""):
+                    prog_elem.remove(premiere)
+                    ET.SubElement(prog_elem, "previously-shown")
+
+                f_out.write(ET.tostring(prog_elem, encoding="utf-8"))
 
         f_out.write(b"\n</tv>")
+
 
 # -----------------------------
 # INDEX REPORT (COLLAPSIBLE)
