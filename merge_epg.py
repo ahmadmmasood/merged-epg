@@ -62,9 +62,7 @@ def split_master(master_display):
     non_local = set()
 
     for ch in master_display:
-        if re.match(r"^[WK][A-Z]{2,4}", ch):
-            local.add(ch)
-        elif any(x in ch for x in ["PBS", "Maryland", "Baltimore"]):
+        if re.match(r"^[WK][A-Z]{2,4}-DT$", ch):
             local.add(ch)
         else:
             non_local.add(ch)
@@ -133,7 +131,6 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
                     master_tokens = set(master_clean.split())
                     display_tokens = set(cleaned_display.split())
                     id_tokens = set(cleaned_id.split())
-
                     if master_tokens.issubset(display_tokens) or master_tokens.issubset(id_tokens):
                         matched_display = master_disp
                         break
@@ -142,6 +139,28 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
             if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
                     if similar(cleaned_display, master_clean) >= 0.7 or similar(cleaned_id, master_clean) >= 0.7:
+                        matched_display = master_disp
+                        break
+
+            # 4️⃣ SMART NON-LOCAL MATCH (new)
+            if not matched_display:
+                feed_norm = re.sub(r"[._-]", " ", display.lower())
+                feed_norm = re.sub(r"\b(hd|us|us2)\b", "", feed_norm)
+                feed_norm = re.sub(r"\s+", " ", feed_norm).strip()
+
+                for master_clean, master_disp in master_cleaned.items():
+                    master_norm = master_clean.lower()
+                    master_norm = re.sub(r"[._-]", " ", master_norm)
+                    master_norm = re.sub(r"\s+", " ", master_norm).strip()
+
+                    # a. Check if all master words exist in feed tokens
+                    master_words = master_norm.split()
+                    if all(any(word in feed_token for feed_token in feed_norm.split()) for word in master_words):
+                        matched_display = master_disp
+                        break
+
+                    # b. SequenceMatcher as last resort
+                    if similar(feed_norm, master_norm) >= 0.8:
                         matched_display = master_disp
                         break
 
@@ -155,6 +174,7 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
             raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
 
+            # Only process if channel is mapped
             if raw_channel not in channel_matches:
                 elem.clear()
                 continue
@@ -181,15 +201,9 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
 parse_xml_stream.seen_programmes = set()
 
 # -----------------------------
-# SAVE MERGED XML (APP-COMPATIBLE)
+# SAVE MERGED XML
 # -----------------------------
 def save_merged_xml(channel_id_map, programmes):
-    """
-    Save merged XML in a format compatible with EPG apps.
-
-    channel_id_map: dict {raw_id -> master display name}
-    programmes: list of tuples (raw_channel, prog_xml_bytes)
-    """
     with gzip.open(OUTPUT_XML_GZ, "wb") as f_out:
         f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f_out.write(b"<tv generator-info-name=\"CustomEPG\">\n")
@@ -200,37 +214,26 @@ def save_merged_xml(channel_id_map, programmes):
                 continue
             used_display.add(display)
 
-            # Create channel element with original raw_id
             ch_elem = ET.Element("channel", id=raw_id)
-
-            # Optional: preserve icons and url if needed
-            # If you want to include default placeholders:
             ET.SubElement(ch_elem, "icon", src="http://dshm.tmsimg.com/assets/s28708_ll_h15_ac.png?w=360&amp;h=270")
             ET.SubElement(ch_elem, "url").text = "http://www.tmsapi.com"
-
-            # Display name using master name
             ET.SubElement(ch_elem, "display-name", lang="en").text = display
 
             f_out.write(ET.tostring(ch_elem, encoding="utf-8"))
 
-        # Write all programmes
         for raw_channel, prog_xml in programmes:
             if raw_channel in channel_id_map:
                 prog_elem = ET.fromstring(prog_xml)
-
-                # Replace empty <premiere> with <previously-shown />
                 premiere = prog_elem.find("premiere")
                 if premiere is not None and (premiere.text is None or premiere.text.strip() == ""):
                     prog_elem.remove(premiere)
                     ET.SubElement(prog_elem, "previously-shown")
-
                 f_out.write(ET.tostring(prog_elem, encoding="utf-8"))
 
         f_out.write(b"\n</tv>")
 
-
 # -----------------------------
-# INDEX REPORT (COLLAPSIBLE)
+# INDEX REPORT
 # -----------------------------
 def update_index(master_display, matched_display_names):
     found = []
