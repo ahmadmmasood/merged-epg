@@ -160,7 +160,7 @@ WE tv
 #=========================
 #LOCAL CHANNELS – DC / BALTIMORE OTA
 #=========================
-WRC-HD
+WRC-DT
 COZI TV
 CRIMES
 Oxygen
@@ -174,7 +174,7 @@ Charge!
 Comet
 ROAR
 
-WUSA-HD
+WUSA-DT
 Crime TV
 Quest
 The Nest
@@ -194,7 +194,7 @@ Movies!
 Heroes & Icons
 Fox Weather
 
-MPT-HD
+MPT-DT
 MPT-2
 MPT Kids
 NHK World Japan
