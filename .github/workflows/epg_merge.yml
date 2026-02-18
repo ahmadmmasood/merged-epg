@@ -3,10 +3,10 @@ name: Merge EPG Daily
 on:
   push:
     branches:
-      - main        # runs on push to main
+      - main
   schedule:
-    - cron: '0 5 * * *'  # daily at 05:00 UTC
-  workflow_dispatch:       # allows manual run
+    - cron: '0 */6 * * *'   # every 6 hours (UTC)
+  workflow_dispatch:
 
 jobs:
   merge-epg:
@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -29,14 +31,17 @@ jobs:
       - name: Run EPG merge
         run: python merge_epg.py
 
-      - name: Configure Git for auto-push
+      - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Commit and push changes
+      - name: Commit and push if changed
         run: |
           git add merged.xml.gz index.html merge_epg.py
-          git commit -m "Auto-update merged EPG with local + important channels" || echo "No changes to commit"
-          git push origin main
-
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update merged EPG"
+            git push origin main
+          fi
