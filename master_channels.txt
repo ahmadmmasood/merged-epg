@@ -29,7 +29,7 @@ OuterMax
 
 Showtime
 Showtime 2
-SHO×BET
+SHO X BET
 Showtime Extreme
 Showtime Family Zone
 Showtime Next
@@ -215,8 +215,6 @@ XITOS
 
 WDCW-DT
 Antenna TV
-
-CWWNUV
 
 Bounce
 Court TV
