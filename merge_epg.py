@@ -95,7 +95,7 @@ def fetch_content(url):
 # -----------------------------
 # PARSE XML STREAM
 # -----------------------------
-def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
+def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7):
     channel_matches = {}   # raw_id -> master_display_name
     programmes = []
 
@@ -116,6 +116,13 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
             raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
+            # --- LOCAL DT CHANNELS --- exact match only
+            if display in local_channels:
+                channel_matches[raw_id] = display
+                elem.clear()
+                continue  # skip all fuzzy/smart logic
+
+            # --- NON-LOCAL CHANNELS --- existing matching logic
             cleaned_display = clean_text(display)
             cleaned_id = clean_text(raw_id)
 
@@ -142,7 +149,7 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
                         matched_display = master_disp
                         break
 
-            # 4️⃣ SMART NON-LOCAL MATCH (new)
+            # 4️⃣ SMART NON-LOCAL MATCH
             if not matched_display:
                 feed_norm = re.sub(r"[._-]", " ", display.lower())
                 feed_norm = re.sub(r"\b(hd|us|us2)\b", "", feed_norm)
@@ -153,13 +160,11 @@ def parse_xml_stream(content_bytes, master_cleaned, days_limit=7):
                     master_norm = re.sub(r"[._-]", " ", master_norm)
                     master_norm = re.sub(r"\s+", " ", master_norm).strip()
 
-                    # a. Check if all master words exist in feed tokens
                     master_words = master_norm.split()
                     if all(any(word in feed_token for feed_token in feed_norm.split()) for word in master_words):
                         matched_display = master_disp
                         break
 
-                    # b. SequenceMatcher as last resort
                     if similar(feed_norm, master_norm) >= 0.8:
                         matched_display = master_disp
                         break
@@ -304,7 +309,8 @@ def main():
 
         channel_map, programmes = parse_xml_stream(
             content,
-            master_cleaned
+            master_cleaned,
+            local_channels
         )
 
         # Enforce local channels only from local feed
