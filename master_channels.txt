@@ -259,12 +259,3 @@ Sony TV
 Sun TV
 Republic TV
 Times Now
-TV9
-
-# Lebanese Channels
-LBCI
-MTV Lebanon
-Al Jadeed
-Future TV
-OTV Lebanon
-
