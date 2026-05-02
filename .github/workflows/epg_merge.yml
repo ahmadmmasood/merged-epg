@@ -31,6 +31,9 @@ jobs:
       - name: Run EPG merge
         run: python merge_epg.py
 
+      - name: Debug output files
+        run: ls -lah
+
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
@@ -38,7 +41,7 @@ jobs:
 
       - name: Commit and push if changed
         run: |
-          git add merged.xml merged.xml.gz local.xml local.xml.gz index.html merge_epg.py
+          git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
