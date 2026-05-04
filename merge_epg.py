@@ -96,6 +96,8 @@ def save_xml(file_xml, file_gz, items):
         if tag in ["programme", "channel"]:
             clean_items.append((tag, xml))
 
+    print("\nCLEAN ITEMS TO WRITE:", len(clean_items))
+
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
@@ -125,37 +127,59 @@ def main():
         if not content:
             continue
 
-        if "MuazT" in url and "ArabicEPG.xml" in url:
-            print("\n========== MUAZT DEBUG START ==========")
+        # ================= GLOBAL MUAZT DEBUG (ALWAYS RUNS) =================
+        print("\n========== MUAZT DEBUG START ==========")
+        print("URL:", url)
 
-            print(content.decode("utf-8", errors="ignore")[:500])
+        try:
+            print("\nRAW PREVIEW:")
+            print(content.decode("utf-8", errors="ignore")[:600])
+        except:
+            print("RAW DECODE FAILED")
 
+        try:
             content = fix_muazt_epg(content)
+        except:
+            pass
 
-            print("\nAFTER FIX:")
-            print(content.decode("utf-8", errors="ignore")[:500])
+        try:
+            print("\nAFTER FIX PREVIEW:")
+            print(content.decode("utf-8", errors="ignore")[:600])
+        except:
+            print("FIXED DECODE FAILED")
 
-            try:
-                root = ET.fromstring(content)
+        try:
+            root = ET.fromstring(content)
 
-                for ch in root.findall("channel"):
-                    txt = ET.tostring(ch, encoding="utf-8").decode("utf-8", errors="ignore")
-                    if "Network Arabic" in txt:
-                        print("\nCHANNEL FOUND:")
-                        print(txt[:200])
+            ch = 0
+            pr = 0
+            found = False
 
-                for pr in root.findall("programme"):
-                    txt = ET.tostring(pr, encoding="utf-8").decode("utf-8", errors="ignore")
-                    if "Network Arabic" in txt:
-                        print("\nPROGRAMME FOUND:")
-                        print(txt[:200])
-                        arabic_prog.append(("programme", ET.tostring(pr, encoding="utf-8")))
+            for c in root.findall("channel"):
+                ch += 1
+                t = ET.tostring(c, encoding="utf-8").decode("utf-8", errors="ignore")
+                if "Network Arabic" in t:
+                    print("\nFOUND CHANNEL:\n", t[:300])
+                    found = True
 
-            except Exception as e:
-                print("ERROR:", e)
+            for p in root.findall("programme"):
+                pr += 1
+                t = ET.tostring(p, encoding="utf-8").decode("utf-8", errors="ignore")
+                if "Network Arabic" in t:
+                    print("\nFOUND PROGRAMME:\n", t[:300])
+                    found = True
+                    arabic_prog.append(("programme", ET.tostring(p, encoding="utf-8")))
 
-            print("========== MUAZT DEBUG END ==========\n")
+            print("\nCHANNEL COUNT:", ch)
+            print("PROGRAMME COUNT:", pr)
+            print("FOUND NETWORK ARABIC:", found)
 
+        except Exception as e:
+            print("PARSE ERROR:", e)
+
+        print("========== MUAZT DEBUG END ==========\n")
+
+        # ================= NORMAL FLOW =================
         events = parse(content)
 
         count = 0
