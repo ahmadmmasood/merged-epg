@@ -52,8 +52,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: latest
-          name: "EPG Latest Build"
+          tag_name: v${{ github.run_number }}
+          name: "EPG Build ${{ github.run_number }}"
           files: |
             merged.xml.gz
             local.xml.gz
