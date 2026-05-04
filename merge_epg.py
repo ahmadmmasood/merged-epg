@@ -33,17 +33,6 @@ def decode_content(data):
         return gzip.decompress(data)
     return data
 
-def clean_text(name):
-    if not name:
-        return ""
-    name = name.lower()
-    name = name.replace("×", "x").replace("/", " ").replace("(", " ").replace(")", " ").replace("&", " and ").replace("-", " ")
-    for word in remove_words:
-        name = re.sub(r"\b" + word + r"\b", " ", name)
-    name = regex_remove.sub(" ", name)
-    name = re.sub(r"\s+", " ", name)
-    return name.strip()
-
 def process_muazt(content, url):
     print("\n========== ARABIC2 DEBUG START ==========")
     print("URL:", url)
@@ -58,7 +47,7 @@ def process_muazt(content, url):
     except Exception as e:
         print("XML PARSE ERROR:", e)
         print("========== ARABIC2 DEBUG END ==========")
-        return decoded
+        return content
 
     programmes = root.findall(".//programme")
     print("PROGRAMMES FOUND:", len(programmes))
@@ -66,14 +55,13 @@ def process_muazt(content, url):
     for i, p in enumerate(programmes[:3]):
         print("SAMPLE PROGRAMME", i, ET.tostring(p, encoding="unicode"))
 
-    fixed_count = 0
+    fixed = 0
 
     for prog in programmes:
         titles = prog.findall("title")
         if not titles:
             continue
 
-        # ALWAYS KEEP FIRST TITLE ONLY
         first = titles[0].text or ""
         first = re.sub(r"\s+", " ", first).strip()
 
@@ -84,16 +72,17 @@ def process_muazt(content, url):
         new_title.text = first
         prog.insert(0, new_title)
 
-        fixed_count += 1
+        fixed += 1
 
-    fixed = ET.tostring(root, encoding="utf-8")
+    result = ET.tostring(root, encoding="utf-8")
 
-    print("PROGS FIXED:", fixed_count)
-    print("FINAL ARABIC2 SIZE:", len(fixed))
-    print("FINAL ARABIC2 PREVIEW:", fixed[:300])
+    print("PROGS FIXED:", fixed)
+    print("FINAL ARABIC2 SIZE:", len(result))
+    print("FINAL ARABIC2 PREVIEW:", result[:300])
+
     print("========== ARABIC2 DEBUG END ==========\n")
 
-    return fixed
+    return result
 
 def load_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
@@ -123,14 +112,17 @@ def main():
         print("\n=========================")
         print("SOURCE:", url)
 
-        content = fetch_content(url)
-        print("DOWNLOADED BYTES:", len(content))
+        raw = fetch_content(url)
+        print("DOWNLOADED BYTES:", len(raw))
 
-        decoded = decode_content(content)
-
-        # FORCE MUAZT DETECTION PROPERLY
+        # FIX: ALWAYS process BEFORE parsing
         if "MuazT/EPG-Guide" in url or "ArabicEPG.xml" in url:
-            decoded = process_muazt(content, url)
+            print("[ROUTE] ARABIC PIPELINE ACTIVE")
+            raw = process_muazt(raw, url)
+        else:
+            print("[ROUTE] STANDARD PIPELINE")
+
+        decoded = decode_content(raw)
 
         try:
             root = ET.fromstring(decoded)
