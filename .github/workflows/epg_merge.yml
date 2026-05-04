@@ -39,14 +39,14 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Commit XML.GZ only
+      - name: Commit XML.GZ files
         run: |
           git add merged.xml.gz local.xml.gz arabic2.xml.gz index.html merge_epg.py
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update EPG (gz only)"
+            git commit -m "Auto-update EPG (gz files)"
             git push origin main
           fi
 
@@ -57,8 +57,8 @@ jobs:
           name: "EPG Latest Build"
           overwrite: true
           files: |
-            merged.xml
-            local.xml
-            arabic2.xml
+            merged.xml.gz
+            local.xml.gz
+            arabic2.xml.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
