@@ -4,7 +4,6 @@ import requests
 import xml.etree.ElementTree as ET
 from io import BytesIO
 
-MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
 
 OUTPUT_XML = "merged.xml"
@@ -12,8 +11,6 @@ OUTPUT_XML_GZ = "merged.xml.gz"
 
 OUTPUT_LOCAL_XML = "local.xml"
 OUTPUT_LOCAL_XML_GZ = "local.xml.gz"
-
-LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 
 
 # -----------------------------
@@ -42,13 +39,12 @@ def load_epg_sources():
 
 
 # -----------------------------
-# PARSE (FIXED: NO FILTERING)
+# PARSE XML (NO FILTERING)
 # -----------------------------
 def parse_xml_stream(content_bytes):
-    channel_map = {}
+    channels = {}
     programmes = []
 
-    # handle gz or xml
     try:
         f = gzip.open(BytesIO(content_bytes), "rb")
         f.peek(1)
@@ -61,36 +57,44 @@ def parse_xml_stream(content_bytes):
 
         # ---------------- CHANNEL ----------------
         if elem.tag == "channel":
-            raw_id = elem.attrib.get("id", "")
-            display = elem.findtext("display-name") or raw_id
+            cid = elem.attrib.get("id")
 
-            # KEEP EVERYTHING (important fix)
-            channel_map[raw_id] = display
-            programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
+            display = elem.findtext("display-name") or cid
+
+            # FORCE KEEP CHANNEL (NO DROPPING EVER)
+            channels[cid] = display
+
             elem.clear()
 
         # ---------------- PROGRAMME ----------------
         elif elem.tag == "programme":
-            raw_channel = elem.attrib.get("channel")
-
-            # KEEP EVERYTHING (important fix)
-            programmes.append((raw_channel, ET.tostring(elem, encoding="utf-8")))
+            programmes.append(elem)
             elem.clear()
 
-    return channel_map, programmes
+    return channels, programmes
 
 
 # -----------------------------
-# SAVE XML / GZ
+# WRITE XML + GZ
 # -----------------------------
-def save_xml(channel_map, programmes, xml_file, gz_file=None):
+def save_xml(channels, programmes, xml_file, gz_file=None):
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
 
-        for _, data in programmes:
-            f.write(data)
+        # ---------------- WRITE CHANNELS FIRST ----------------
+        for cid, display in channels.items():
+            channel_xml = f"""
+<channel id="{cid}">
+  <display-name lang="en">{display}</display-name>
+</channel>
+"""
+            f.write(channel_xml.encode("utf-8"))
+
+        # ---------------- WRITE PROGRAMMES ----------------
+        for elem in programmes:
+            f.write(ET.tostring(elem, encoding="utf-8"))
 
         f.write(b"</tv>")
 
@@ -103,20 +107,19 @@ def save_xml(channel_map, programmes, xml_file, gz_file=None):
 
 
 # -----------------------------
-# LOCAL FILE
+# LOCAL FILE (same data)
 # -----------------------------
-def create_local(all_map, all_prog):
-    save_xml(all_map, all_prog, OUTPUT_LOCAL_XML, OUTPUT_LOCAL_XML_GZ)
+def create_local(channels, programmes):
+    save_xml(channels, programmes, OUTPUT_LOCAL_XML, OUTPUT_LOCAL_XML_GZ)
 
 
 # -----------------------------
-# ARABIC2 (MAIN FIX FOR YOU)
+# ARABIC2 FILE (FOR IPTV)
 # -----------------------------
 def create_arabic2():
     with open(OUTPUT_XML, "rb") as f:
         data = f.read()
 
-    # ONLY USE THIS FILE IN IPTV
     with gzip.open("arabic2.xml.gz", "wb") as f:
         f.write(data)
 
@@ -127,26 +130,26 @@ def create_arabic2():
 def main():
     sources = load_epg_sources()
 
-    all_map = {}
-    all_prog = []
+    all_channels = {}
+    all_programmes = []
 
     for url in sources:
         content = fetch_content(url)
         if not content:
             continue
 
-        channel_map, programmes = parse_xml_stream(content)
+        channels, programmes = parse_xml_stream(content)
 
-        all_map.update(channel_map)
-        all_prog.extend(programmes)
+        all_channels.update(channels)
+        all_programmes.extend(programmes)
 
-    # full merge
-    save_xml(all_map, all_prog, OUTPUT_XML, OUTPUT_XML_GZ)
+    # FULL MERGE
+    save_xml(all_channels, all_programmes, OUTPUT_XML, OUTPUT_XML_GZ)
 
-    # local file
-    create_local(all_map, all_prog)
+    # LOCAL COPY
+    create_local(all_channels, all_programmes)
 
-    # arabic file (gz ONLY)
+    # IPTV FILE
     create_arabic2()
 
     print("Done")
