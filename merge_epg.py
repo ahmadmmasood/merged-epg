@@ -2,7 +2,6 @@ import requests
 import gzip
 import xml.etree.ElementTree as ET
 from io import BytesIO
-import re
 
 EPG_SOURCES_FILE = "epg_sources.txt"
 
@@ -25,20 +24,27 @@ def load_sources():
         return [x.strip() for x in f if x.strip().startswith("http")]
 
 
-def safe_parse(content):
-    try:
-        f = gzip.open(BytesIO(content), "rb")
-        f.peek(1)
-    except:
-        f = BytesIO(content)
+# -----------------------------
+# ROBUST XML LOADER
+# -----------------------------
+def parse_content(data):
+    if not data:
+        return None
+
+    # try gzip first
+    if data[:2] == b"\x1f\x8b":
+        try:
+            data = gzip.decompress(data)
+        except:
+            return None
 
     try:
-        return ET.parse(f).getroot()
+        return ET.fromstring(data)
     except:
         return None
 
 
-def build_tree(channels, programmes):
+def build_xml(channels, programmes):
     tv = ET.Element("tv")
 
     for c in channels.values():
@@ -62,11 +68,9 @@ def main():
     programmes = []
 
     for url in sources:
-        content = fetch(url)
-        if not content:
-            continue
+        data = fetch(url)
+        root = parse_content(data)
 
-        root = safe_parse(content)
         if root is None:
             continue
 
@@ -80,13 +84,13 @@ def main():
             elif elem.tag == "programme":
                 programmes.append(elem)
 
-    xml_data = build_tree(channels, programmes)
+    xml_data = build_xml(channels, programmes)
 
     write_gz(xml_data, OUTPUT_GZ)
     write_gz(xml_data, OUTPUT_LOCAL_GZ)
     write_gz(xml_data, OUTPUT_ARABIC_GZ)
 
-    print("DONE")
+    print("DONE:", len(channels), "channels", len(programmes), "programmes")
 
 
 if __name__ == "__main__":
