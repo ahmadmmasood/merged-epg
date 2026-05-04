@@ -2,7 +2,6 @@ import gzip
 import requests
 import xml.etree.ElementTree as ET
 import re
-from io import BytesIO
 
 MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
@@ -50,65 +49,86 @@ def decode_content(data):
     return data
 
 
-# =========================
-# MUAZT DEBUG PIPELINE
-# =========================
-def process_muazt(content, url):
+# =========================================================
+# MUAZT PIPELINE (ALWAYS RUNS, FULL VISIBILITY)
+# =========================================================
+def run_muazt_pipeline():
     print("\n========== ARABIC2 DEBUG START ==========")
-    print("URL:", url)
+
+    print("FETCHING:", MUAZT_URL)
+    content = fetch_content(MUAZT_URL)
+
     print("RAW BYTES:", len(content))
 
     decoded = decode_content(content)
     print("DECODED BYTES:", len(decoded))
 
-    preview = decoded[:300].decode("utf-8", errors="ignore")
-    print("RAW PREVIEW:", preview)
-
     try:
         root = ET.fromstring(decoded)
     except Exception as e:
-        print("XML PARSE ERROR:", str(e))
+        print("XML PARSE ERROR:", e)
         print("========== ARABIC2 DEBUG END ==========")
-        return decoded
+        return None
 
     programmes = root.findall(".//programme")
+    channels = root.findall(".//channel")
+
+    print("CHANNELS FOUND:", len(channels))
     print("PROGRAMMES FOUND:", len(programmes))
 
-    # show samples ALWAYS
+    print("\n--- SAMPLE BEFORE CLEANING ---")
     for i, p in enumerate(programmes[:3]):
-        print("SAMPLE PROGRAMME", i, ET.tostring(p, encoding="unicode"))
+        print(ET.tostring(p, encoding="unicode"))
 
-    # CLEAN STEP (example reconstruction)
-    for prog in programmes:
+    # transformation step
+    for idx, prog in enumerate(programmes):
         titles = prog.findall("title")
         if not titles:
             continue
 
-        txt = titles[0].text or ""
-        txt = re.sub(r"\s+", " ", txt).strip()
+        original = titles[0].text or ""
+        cleaned = re.sub(r"\s+", " ", original).strip()
+
+        # DEBUG EACH TRANSFORM (light but visible)
+        print("\n[TRANSFORM]", idx)
+        print("ORIGINAL:", original)
+        print("CLEANED :", cleaned)
 
         for t in titles:
             prog.remove(t)
 
         new_title = ET.Element("title")
-        new_title.text = txt
+        new_title.text = cleaned
         prog.insert(0, new_title)
 
     fixed = ET.tostring(root, encoding="utf-8")
 
-    print("FINAL ARABIC2 SIZE:", len(fixed))
-    print("FINAL ARABIC2 PREVIEW:", fixed[:300])
+    print("\nFINAL ARABIC2 SIZE:", len(fixed))
+    print("FINAL ARABIC2 PREVIEW:", fixed[:400])
 
     print("========== ARABIC2 DEBUG END ==========\n")
+
+    # save output
+    with open(OUTPUT_ARABIC_XML, "wb") as f:
+        f.write(fixed)
+
+    with gzip.open(OUTPUT_ARABIC_XML_GZ, "wb") as f:
+        f.write(fixed)
 
     return fixed
 
 
+# =========================================================
+# SOURCE LOADING
+# =========================================================
 def load_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
         return [x.strip() for x in f if x.strip().startswith("http")]
 
 
+# =========================================================
+# SAVE MERGED OUTPUT
+# =========================================================
 def save_xml(file_xml, file_gz, items):
     print("FINAL CLEAN ITEMS TO WRITE:", len(items))
 
@@ -126,19 +146,13 @@ def save_xml(file_xml, file_gz, items):
         write(f)
 
 
-def save_arabic2(xml_bytes):
-    print("\nWRITING ARABIC2 FILES...")
-
-    with open(OUTPUT_ARABIC_XML, "wb") as f:
-        f.write(xml_bytes)
-
-    with gzip.open(OUTPUT_ARABIC_XML_GZ, "wb") as f:
-        f.write(xml_bytes)
-
-    print("ARABIC2 SAVED:", OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ)
-
-
+# =========================================================
+# MAIN PIPELINE
+# =========================================================
 def main():
+    # ALWAYS RUN MUAZT FIRST
+    run_muazt_pipeline()
+
     sources = load_sources()
     all_prog = []
 
@@ -148,15 +162,9 @@ def main():
         content = fetch_content(url)
         print("DOWNLOADED BYTES:", len(content))
 
-        # FIXED MUAZT DETECTION
-        if "MuazT/EPG-Guide" in url:
-            content = process_muazt(content, url)
-
-            # ALSO SAVE ARABIC2 ALWAYS
-            save_arabic2(content)
+        decoded = decode_content(content)
 
         try:
-            decoded = decode_content(content)
             root = ET.fromstring(decoded)
 
             count = 0
