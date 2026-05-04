@@ -133,10 +133,60 @@ def main():
         if not content:
             continue
 
+        # ================= MUAZT DEBUG BLOCK =================
         if MUAZT_URL in url:
-            content = fix_muazt_epg(content)
-            print("MUAZT FIX APPLIED")
+            print("\n========== MUAZT DEBUG START ==========")
 
+            try:
+                print("RAW PREVIEW:")
+                print(content.decode("utf-8", errors="ignore")[:600])
+            except:
+                print("RAW PREVIEW FAILED")
+
+            content = fix_muazt_epg(content)
+            print("\nMUAZT FIX APPLIED")
+
+            try:
+                print("\nFIXED PREVIEW:")
+                print(content.decode("utf-8", errors="ignore")[:600])
+            except:
+                print("FIXED PREVIEW FAILED")
+
+            try:
+                root = ET.fromstring(content)
+
+                ch_count = 0
+                pr_count = 0
+                found = False
+
+                for ch in root.findall("channel"):
+                    ch_count += 1
+                    xml = ET.tostring(ch, encoding="utf-8").decode("utf-8", errors="ignore")
+
+                    if "Network Arabic" in xml:
+                        print("\nFOUND CHANNEL BLOCK:")
+                        print(xml[:300])
+                        found = True
+
+                for pr in root.findall("programme"):
+                    pr_count += 1
+                    xml = ET.tostring(pr, encoding="utf-8").decode("utf-8", errors="ignore")
+
+                    if "Network Arabic" in xml:
+                        print("\nFOUND PROGRAMME BLOCK:")
+                        print(xml[:300])
+                        found = True
+
+                print("\nCHANNEL COUNT:", ch_count)
+                print("PROGRAMME COUNT:", pr_count)
+                print("NETWORK ARABIC FOUND:", found)
+
+            except Exception as e:
+                print("PARSE ERROR:", str(e))
+
+            print("========== MUAZT DEBUG END ==========\n")
+
+        # ================= NORMAL FLOW =================
         events = parse(content)
 
         count = 0
