@@ -3,7 +3,6 @@ import requests
 import xml.etree.ElementTree as ET
 import re
 
-MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
 
 OUTPUT_XML = "merged.xml"
@@ -16,9 +15,6 @@ OUTPUT_ARABIC_XML = "arabic2.xml"
 OUTPUT_ARABIC_XML_GZ = "arabic2.xml.gz"
 
 MUAZT_URL = "https://raw.githubusercontent.com/MuazT/EPG-Guide/master/ArabicEPG.xml"
-
-remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "us", "us2"]
-regex_remove = re.compile(r"[^\w\s]")
 
 def fetch_content(url):
     r = requests.get(url, timeout=60)
@@ -40,14 +36,16 @@ def process_muazt(content, url):
 
     decoded = decode_content(content)
     print("DECODED BYTES:", len(decoded))
-    print("RAW PREVIEW:", decoded[:300])
+
+    preview = decoded[:300].decode("utf-8", errors="ignore")
+    print("RAW PREVIEW:", preview)
 
     try:
         root = ET.fromstring(decoded)
     except Exception as e:
         print("XML PARSE ERROR:", e)
-        print("========== ARABIC2 DEBUG END ==========")
-        return content
+        print("========== ARABIC2 DEBUG END ==========\n")
+        return decoded
 
     programmes = root.findall(".//programme")
     print("PROGRAMMES FOUND:", len(programmes))
@@ -78,8 +76,6 @@ def process_muazt(content, url):
 
     print("PROGS FIXED:", fixed)
     print("FINAL ARABIC2 SIZE:", len(result))
-    print("FINAL ARABIC2 PREVIEW:", result[:300])
-
     print("========== ARABIC2 DEBUG END ==========\n")
 
     return result
@@ -106,7 +102,10 @@ def save_xml(file_xml, file_gz, items):
 
 def main():
     sources = load_sources()
-    all_items = []
+
+    merged_items = []
+    local_items = []
+    arabic_items = []
 
     for url in sources:
         print("\n=========================")
@@ -115,8 +114,9 @@ def main():
         raw = fetch_content(url)
         print("DOWNLOADED BYTES:", len(raw))
 
-        # FIX: ALWAYS process BEFORE parsing
-        if "MuazT/EPG-Guide" in url or "ArabicEPG.xml" in url:
+        is_arabic = (MUAZT_URL in url or "ArabicEPG.xml" in url)
+
+        if is_arabic:
             print("[ROUTE] ARABIC PIPELINE ACTIVE")
             raw = process_muazt(raw, url)
         else:
@@ -128,18 +128,34 @@ def main():
             root = ET.fromstring(decoded)
 
             count = 0
+
             for elem in root.iter():
-                if elem.tag in ["programme", "channel"]:
-                    all_items.append((elem.tag, ET.tostring(elem, encoding="utf-8")))
-                    count += 1
+                if elem.tag not in ["programme", "channel"]:
+                    continue
+
+                xml = ET.tostring(elem, encoding="utf-8")
+
+                if is_arabic:
+                    arabic_items.append((elem.tag, xml))
+                elif "local" in url.lower():
+                    local_items.append((elem.tag, xml))
+                else:
+                    merged_items.append((elem.tag, xml))
+
+                count += 1
 
             print("ITEMS FROM FEED:", count)
 
         except Exception as e:
             print("PARSE ERROR:", e)
 
-    print("\nFINAL TOTAL ITEMS:", len(all_items))
-    save_xml(OUTPUT_XML, OUTPUT_XML_GZ, all_items)
+    print("\nFINAL TOTAL ITEMS (merged):", len(merged_items))
+    print("FINAL TOTAL ITEMS (local):", len(local_items))
+    print("FINAL TOTAL ITEMS (arabic):", len(arabic_items))
+
+    save_xml(OUTPUT_XML, OUTPUT_XML_GZ, merged_items)
+    save_xml(OUTPUT_LOCAL_XML, OUTPUT_LOCAL_XML_GZ, local_items)
+    save_xml(OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ, arabic_items)
 
 if __name__ == "__main__":
     main()
