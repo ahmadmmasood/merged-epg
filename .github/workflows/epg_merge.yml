@@ -31,15 +31,20 @@ jobs:
       - name: Run EPG merge
         run: python merge_epg.py
 
-      - name: Debug output files
-        run: ls -lah
+      - name: Verify outputs exist
+        run: |
+          echo "=== FILE CHECK ==="
+          ls -lah
+          test -f merged.xml.gz || (echo "merged.xml.gz MISSING" && exit 1)
+          test -f local.xml.gz || (echo "local.xml.gz MISSING" && exit 1)
+          test -f arabic2.xml.gz || (echo "arabic2.xml.gz MISSING" && exit 1)
 
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Commit XML.GZ only
+      - name: Commit XML files
         run: |
           git add merged.xml.gz local.xml.gz arabic2.xml.gz index.html merge_epg.py
           if git diff --cached --quiet; then
@@ -58,6 +63,5 @@ jobs:
             merged.xml.gz
             local.xml.gz
             arabic2.xml.gz
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
