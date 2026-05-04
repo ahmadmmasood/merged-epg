@@ -1,9 +1,7 @@
-import os
 import gzip
 import requests
 import xml.etree.ElementTree as ET
 import re
-from datetime import datetime, timedelta
 from io import BytesIO
 
 MASTER_LIST_FILE = "master_channels.txt"
@@ -18,7 +16,6 @@ OUTPUT_LOCAL_XML_GZ = "local.xml.gz"
 OUTPUT_ARABIC_XML = "arabic2.xml"
 OUTPUT_ARABIC_XML_GZ = "arabic2.xml.gz"
 
-LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 MUAZT_URL = "https://raw.githubusercontent.com/MuazT/EPG-Guide/master/ArabicEPG.xml"
 
 remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "us", "us2"]
@@ -53,59 +50,55 @@ def decode_content(data):
     return data
 
 
-# ---------------- ARABIC DEBUG + CLEAN ----------------
-def fix_muazt_epg(content):
+# =========================
+# MUAZT DEBUG PIPELINE
+# =========================
+def process_muazt(content, url):
     print("\n========== ARABIC2 DEBUG START ==========")
+    print("URL:", url)
+    print("RAW BYTES:", len(content))
 
     decoded = decode_content(content)
-
-    print("RAW BYTES:", len(content))
     print("DECODED BYTES:", len(decoded))
-    print("RAW PREVIEW:", decoded[:250])
+
+    preview = decoded[:300].decode("utf-8", errors="ignore")
+    print("RAW PREVIEW:", preview)
 
     try:
         root = ET.fromstring(decoded)
     except Exception as e:
-        print("XML PARSE ERROR:", e)
+        print("XML PARSE ERROR:", str(e))
         print("========== ARABIC2 DEBUG END ==========")
         return decoded
 
     programmes = root.findall(".//programme")
     print("PROGRAMMES FOUND:", len(programmes))
 
-    # show first few raw
+    # show samples ALWAYS
     for i, p in enumerate(programmes[:3]):
-        print(f"SAMPLE PROGRAMME {i}:", ET.tostring(p, encoding="utf-8")[:200])
+        print("SAMPLE PROGRAMME", i, ET.tostring(p, encoding="unicode"))
 
-    changed = 0
-
+    # CLEAN STEP (example reconstruction)
     for prog in programmes:
         titles = prog.findall("title")
         if not titles:
             continue
 
-        old = titles[0].text or ""
-        cleaned = re.sub(r"\s+", " ", old).strip()
-
-        # DEBUG ALWAYS PRINT FOR FIRST 10 CHANGES
-        if changed < 10:
-            print("\nTITLE BEFORE:", old)
-            print("TITLE AFTER :", cleaned)
+        txt = titles[0].text or ""
+        txt = re.sub(r"\s+", " ", txt).strip()
 
         for t in titles:
             prog.remove(t)
 
         new_title = ET.Element("title")
-        new_title.text = cleaned
+        new_title.text = txt
         prog.insert(0, new_title)
-
-        changed += 1
 
     fixed = ET.tostring(root, encoding="utf-8")
 
-    print("\nPROGRAMMES MODIFIED:", changed)
     print("FINAL ARABIC2 SIZE:", len(fixed))
-    print("FINAL ARABIC2 PREVIEW:", fixed[:400])
+    print("FINAL ARABIC2 PREVIEW:", fixed[:300])
+
     print("========== ARABIC2 DEBUG END ==========\n")
 
     return fixed
@@ -117,14 +110,12 @@ def load_sources():
 
 
 def save_xml(file_xml, file_gz, items):
-    clean_items = [(t, x) for t, x in items if t in ["programme", "channel"]]
-
-    print("\nFINAL CLEAN ITEMS TO WRITE:", len(clean_items))
+    print("FINAL CLEAN ITEMS TO WRITE:", len(items))
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
-        for _, xml in clean_items:
+        for _, xml in items:
             f.write(xml)
         f.write(b"</tv>")
 
@@ -133,6 +124,18 @@ def save_xml(file_xml, file_gz, items):
 
     with gzip.open(file_gz, "wb") as f:
         write(f)
+
+
+def save_arabic2(xml_bytes):
+    print("\nWRITING ARABIC2 FILES...")
+
+    with open(OUTPUT_ARABIC_XML, "wb") as f:
+        f.write(xml_bytes)
+
+    with gzip.open(OUTPUT_ARABIC_XML_GZ, "wb") as f:
+        f.write(xml_bytes)
+
+    print("ARABIC2 SAVED:", OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ)
 
 
 def main():
@@ -145,9 +148,12 @@ def main():
         content = fetch_content(url)
         print("DOWNLOADED BYTES:", len(content))
 
-        # MUAZT PIPELINE
-        if MUAZT_URL in url:
-            content = fix_muazt_epg(content)
+        # FIXED MUAZT DETECTION
+        if "MuazT/EPG-Guide" in url:
+            content = process_muazt(content, url)
+
+            # ALSO SAVE ARABIC2 ALWAYS
+            save_arabic2(content)
 
         try:
             decoded = decode_content(content)
@@ -165,7 +171,6 @@ def main():
             print("PARSE ERROR:", str(e))
 
     print("\nFINAL TOTAL ITEMS:", len(all_prog))
-
     save_xml(OUTPUT_XML, OUTPUT_XML_GZ, all_prog)
 
 
