@@ -20,8 +20,6 @@ OUTPUT_LOCAL_XML_GZ = "local.xml.gz"
 OUTPUT_ARABIC_XML = "arabic2.xml"
 OUTPUT_ARABIC_XML_GZ = "arabic2.xml.gz"
 
-INDEX_HTML = "index.html"
-
 LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 MUAZT_URL = "https://raw.githubusercontent.com/MuazT/EPG-Guide/master/ArabicEPG.xml"
 
@@ -41,20 +39,32 @@ def clean_text(name):
     return name.strip()
 
 
-def similar(a, b):
-    return SequenceMatcher(None, a, b).ratio()
+def fetch_content(url):
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return r.content
 
 
-def fix_muazt_epg(content_bytes):
+def safe_parse(content):
     try:
-        root = ET.fromstring(content_bytes)
+        f = gzip.open(BytesIO(content), "rb")
+        f.peek(1)
+    except:
+        f = BytesIO(content)
+
+    return list(ET.iterparse(f, events=("end",)))
+
+
+def fix_muazt_epg(content):
+    try:
+        root = ET.fromstring(content)
 
         for prog in root.findall(".//programme"):
             titles = prog.findall("title")
             if not titles:
                 continue
 
-            txt = titles[0].text if titles[0].text else ""
+            txt = titles[0].text or ""
             txt = re.sub(r"\s+", " ", txt).strip()
 
             for t in titles:
@@ -67,104 +77,44 @@ def fix_muazt_epg(content_bytes):
         return ET.tostring(root, encoding="utf-8")
 
     except:
-        return content_bytes
+        return content
 
 
-def load_master_list():
-    master_cleaned = {}
-    master_display = []
-
-    with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                master_cleaned[clean_text(line)] = line
-                master_display.append(line)
-
-    return master_cleaned, master_display
-
-
-def split_master(master_display):
-    local = set()
-    non_local = set()
-
-    for ch in master_display:
-        if re.match(r"^[WK][A-Z]{2,4}-DT$", ch):
-            local.add(ch)
-        else:
-            non_local.add(ch)
-    return local, non_local
-
-
-def load_epg_sources():
-    sources = []
+def load_sources():
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and line.startswith("http"):
-                sources.append(line)
-    return sources
+        return [x.strip() for x in f if x.strip().startswith("http")]
 
 
-def fetch_content(url):
-    try:
-        r = requests.get(url, timeout=60)
-        r.raise_for_status()
-        return r.content
-    except:
-        return None
+def load_master():
+    with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
+        return [x.strip() for x in f if x.strip() and not x.startswith("#")]
 
 
-def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7):
-    channel_matches = {}
-    programmes = []
-
-    cutoff = datetime.utcnow() + timedelta(days=days_limit)
-
-    try:
-        f = gzip.open(BytesIO(content_bytes), "rb")
-        f.peek(1)
-    except:
-        f = BytesIO(content_bytes)
-
-    try:
-        context = ET.iterparse(f, events=("end",))
-    except:
-        return {}, []
-
-    for event, elem in context:
-
-        if elem.tag == "channel":
-            raw_id = elem.attrib.get("id", "")
-            channel_matches[raw_id] = raw_id
-            programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
-            elem.clear()
-
-        elif elem.tag == "programme":
-            raw_channel = elem.attrib.get("channel")
-            start_str = elem.attrib.get("start")
-
-            try:
-                start_dt = datetime.strptime(start_str.strip(), "%Y%m%d%H%M%S %z")
-                start_dt = start_dt.astimezone(pytz.utc).replace(tzinfo=None)
-            except:
-                elem.clear()
-                continue
-
-            if start_dt <= cutoff:
-                programmes.append((raw_channel, ET.tostring(elem, encoding="utf-8")))
-
-            elem.clear()
-
-    return channel_matches, programmes
+def parse(content):
+    return safe_parse(content)
 
 
-def save_xml(channel_map, programmes, file_xml, file_gz):
+def save_xml(file_xml, file_gz, data):
+
+    print("\n================ XML BUILD DEBUG ================")
+    print("TOTAL PROGRAMMES TO WRITE:", len(data))
+
+    for i, item in enumerate(data[:10]):
+        try:
+            preview = item[1].decode("utf-8", errors="ignore")[:300]
+        except:
+            preview = str(item[1])[:300]
+
+        print("\n--- ITEM", i, "---")
+        print("CHANNEL:", item[0])
+        print(preview)
+
+    print("=================================================\n")
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
-        for cid, data in programmes:
+        for cid, data in data:
             f.write(data)
         f.write(b"</tv>")
 
@@ -175,42 +125,36 @@ def save_xml(channel_map, programmes, file_xml, file_gz):
         write(f)
 
 
-def create_local(all_map, all_prog, local_channels):
-    save_xml(all_map, all_prog, OUTPUT_LOCAL_XML, OUTPUT_LOCAL_XML_GZ)
-
-
-def create_arabic(all_map, all_prog):
-    arabic_map = {k: v for k, v in all_map.items() if "arabic" in v.lower()}
-    arabic_prog = [(k, p) for k, p in all_prog if k in arabic_map]
-    save_xml(arabic_map, arabic_prog, OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ)
-
-
 def main():
-    master_cleaned, master_display = load_master_list()
-    local_channels, non_local_channels = split_master(master_display)
-    sources = load_epg_sources()
+    sources = load_sources()
 
-    all_map = {}
     all_prog = []
 
     for url in sources:
+        print("\nSOURCE:", url)
+
         content = fetch_content(url)
+        print("DOWNLOADED BYTES:", len(content) if content else 0)
+
         if not content:
             continue
 
         if MUAZT_URL in url:
             content = fix_muazt_epg(content)
+            print("MUAZT FIX APPLIED")
 
-        channel_map, programmes = parse_xml_stream(content, master_cleaned, local_channels)
+        events = parse(content)
 
-        all_map.update(channel_map)
-        all_prog.extend(programmes)
+        count = 0
+        for event, elem in events:
+            all_prog.append((elem.tag, ET.tostring(elem, encoding="utf-8")))
+            count += 1
 
-    save_xml(all_map, all_prog, OUTPUT_XML, OUTPUT_XML_GZ)
-    create_local(all_map, all_prog, local_channels)
-    create_arabic(all_map, all_prog)
+        print("ITEMS FROM FEED:", count)
 
-    print("DONE:", len(all_map), len(all_prog))
+    print("\nFINAL TOTAL ITEMS:", len(all_prog))
+
+    save_xml(OUTPUT_XML, OUTPUT_XML_GZ, all_prog)
 
 
 if __name__ == "__main__":
