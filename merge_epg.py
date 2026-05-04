@@ -54,14 +54,14 @@ def fix_muazt_epg(content_bytes):
             if not titles:
                 continue
 
-            clean = titles[0].text or ""
-            clean = re.sub(r"\s+", " ", clean).strip()
+            txt = titles[0].text if titles[0].text else ""
+            txt = re.sub(r"\s+", " ", txt).strip()
 
             for t in titles:
                 prog.remove(t)
 
             new_title = ET.Element("title")
-            new_title.text = clean
+            new_title.text = txt
             prog.insert(0, new_title)
 
         return ET.tostring(root, encoding="utf-8")
@@ -136,18 +136,14 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
 
         if elem.tag == "channel":
             raw_id = elem.attrib.get("id", "")
-            display = elem.findtext("display-name") or raw_id
-
-            channel_matches[raw_id] = raw_id  # IMPORTANT FIX (do not rewrite IDs)
+            channel_matches[raw_id] = raw_id
             programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
-
             elem.clear()
 
         elif elem.tag == "programme":
             raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
 
-            # IMPORTANT FIX: DO NOT FILTER PROGRAMMES HERE
             try:
                 start_dt = datetime.strptime(start_str.strip(), "%Y%m%d%H%M%S %z")
                 start_dt = start_dt.astimezone(pytz.utc).replace(tzinfo=None)
@@ -168,10 +164,8 @@ def save_xml(channel_map, programmes, file_xml, file_gz):
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
-
         for cid, data in programmes:
             f.write(data)
-
         f.write(b"</tv>")
 
     with open(file_xml, "wb") as f:
