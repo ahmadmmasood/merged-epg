@@ -85,25 +85,16 @@ def load_sources():
         return [x.strip() for x in f if x.strip().startswith("http")]
 
 
-def load_master():
-    with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
-        return [x.strip() for x in f if x.strip() and not x.startswith("#")]
-
-
 def parse(content):
     return safe_parse(content)
 
 
 def save_xml(file_xml, file_gz, items):
-
     clean_items = []
 
     for tag, xml in items:
-        if tag not in ["programme", "channel"]:
-            continue
-        clean_items.append((tag, xml))
-
-    print("\nCLEAN ITEMS TO WRITE:", len(clean_items))
+        if tag in ["programme", "channel"]:
+            clean_items.append((tag, xml))
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
@@ -123,70 +114,48 @@ def main():
     sources = load_sources()
 
     all_prog = []
+    arabic_prog = []
 
     for url in sources:
         print("\nSOURCE:", url)
 
         content = fetch_content(url)
-        print("DOWNLOADED BYTES:", len(content) if content else 0)
+        print("DOWNLOADED BYTES:", len(content))
 
         if not content:
             continue
 
-        # ================= MUAZT DEBUG BLOCK =================
-        if MUAZT_URL in url:
+        if "MuazT" in url and "ArabicEPG.xml" in url:
             print("\n========== MUAZT DEBUG START ==========")
 
-            try:
-                print("RAW PREVIEW:")
-                print(content.decode("utf-8", errors="ignore")[:600])
-            except:
-                print("RAW PREVIEW FAILED")
+            print(content.decode("utf-8", errors="ignore")[:500])
 
             content = fix_muazt_epg(content)
-            print("\nMUAZT FIX APPLIED")
 
-            try:
-                print("\nFIXED PREVIEW:")
-                print(content.decode("utf-8", errors="ignore")[:600])
-            except:
-                print("FIXED PREVIEW FAILED")
+            print("\nAFTER FIX:")
+            print(content.decode("utf-8", errors="ignore")[:500])
 
             try:
                 root = ET.fromstring(content)
 
-                ch_count = 0
-                pr_count = 0
-                found = False
-
                 for ch in root.findall("channel"):
-                    ch_count += 1
-                    xml = ET.tostring(ch, encoding="utf-8").decode("utf-8", errors="ignore")
-
-                    if "Network Arabic" in xml:
-                        print("\nFOUND CHANNEL BLOCK:")
-                        print(xml[:300])
-                        found = True
+                    txt = ET.tostring(ch, encoding="utf-8").decode("utf-8", errors="ignore")
+                    if "Network Arabic" in txt:
+                        print("\nCHANNEL FOUND:")
+                        print(txt[:200])
 
                 for pr in root.findall("programme"):
-                    pr_count += 1
-                    xml = ET.tostring(pr, encoding="utf-8").decode("utf-8", errors="ignore")
-
-                    if "Network Arabic" in xml:
-                        print("\nFOUND PROGRAMME BLOCK:")
-                        print(xml[:300])
-                        found = True
-
-                print("\nCHANNEL COUNT:", ch_count)
-                print("PROGRAMME COUNT:", pr_count)
-                print("NETWORK ARABIC FOUND:", found)
+                    txt = ET.tostring(pr, encoding="utf-8").decode("utf-8", errors="ignore")
+                    if "Network Arabic" in txt:
+                        print("\nPROGRAMME FOUND:")
+                        print(txt[:200])
+                        arabic_prog.append(("programme", ET.tostring(pr, encoding="utf-8")))
 
             except Exception as e:
-                print("PARSE ERROR:", str(e))
+                print("ERROR:", e)
 
             print("========== MUAZT DEBUG END ==========\n")
 
-        # ================= NORMAL FLOW =================
         events = parse(content)
 
         count = 0
@@ -194,7 +163,12 @@ def main():
         for event, elem in events:
             tag = elem.tag
             if tag in ["programme", "channel"]:
-                all_prog.append((tag, ET.tostring(elem, encoding="utf-8")))
+                xml = ET.tostring(elem, encoding="utf-8")
+                all_prog.append((tag, xml))
+
+                if "arabic" in url.lower():
+                    arabic_prog.append((tag, xml))
+
                 count += 1
 
         print("ITEMS FROM FEED:", count)
@@ -202,6 +176,7 @@ def main():
     print("\nFINAL TOTAL ITEMS:", len(all_prog))
 
     save_xml(OUTPUT_XML, OUTPUT_XML_GZ, all_prog)
+    save_xml(OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ, arabic_prog)
 
 
 if __name__ == "__main__":
