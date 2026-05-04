@@ -4,3 +4,4 @@ https://iptv-epg.org/files/epg-eg.xml.gz
 https://iptv-epg.org/files/epg-in.xml.gz
 https://www.open-epg.com/files/india3.xml.gz
 https://www.open-epg.com/files/unitedstates10.xml.gz
+https://raw.githubusercontent.com/MuazT/EPG-Guide/master/ArabicEPG.xml
