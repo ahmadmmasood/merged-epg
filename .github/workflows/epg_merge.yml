@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 */6 * * *'   # every 6 hours (UTC)
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -34,9 +34,6 @@ jobs:
       - name: Debug output files
         run: ls -lah
 
-      # -----------------------------
-      # KEEP ONLY SMALL FILES IN REPO
-      # -----------------------------
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
@@ -44,7 +41,7 @@ jobs:
 
       - name: Commit XML.GZ only
         run: |
-          git add merged.xml.gz local.xml.gz index.html merge_epg.py
+          git add merged.xml.gz local.xml.gz arabic2.xml.gz index.html merge_epg.py
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -53,9 +50,6 @@ jobs:
             git push origin main
           fi
 
-      # -----------------------------
-      # RELEASE FULL XML FILES
-      # -----------------------------
       - name: Create GitHub Release with XML files
         uses: softprops/action-gh-release@v1
         with:
@@ -65,5 +59,6 @@ jobs:
           files: |
             merged.xml
             local.xml
+            arabic2.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
