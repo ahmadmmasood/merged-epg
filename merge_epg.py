@@ -20,11 +20,20 @@ OUTPUT_LOCAL_XML_GZ = "local.xml.gz"
 OUTPUT_ARABIC_XML = "arabic2.xml"
 OUTPUT_ARABIC_XML_GZ = "arabic2.xml.gz"
 
-LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 MUAZT_URL = "https://raw.githubusercontent.com/MuazT/EPG-Guide/master/ArabicEPG.xml"
 
 remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "us", "us2"]
 regex_remove = re.compile(r"[^\w\s]")
+
+
+def debug_print(title, data):
+    print("\n========== DEBUG ==========")
+    print(title)
+    try:
+        print(str(data)[:500])
+    except:
+        print("UNPRINTABLE DATA")
+    print("==========================\n")
 
 
 def clean_text(name):
@@ -45,21 +54,25 @@ def fetch_content(url):
     return r.content
 
 
-def safe_parse(content):
-    try:
-        f = gzip.open(BytesIO(content), "rb")
-        f.peek(1)
-    except:
-        f = BytesIO(content)
-
-    return list(ET.iterparse(f, events=("end",)))
+def decode_xml(content, url):
+    if url.endswith(".gz") or content[:2] == b"\x1f\x8b":
+        return gzip.decompress(content)
+    return content
 
 
 def fix_muazt_epg(content):
     try:
-        root = ET.fromstring(content)
+        content = decode_xml(content, MUAZT_URL)
 
-        for prog in root.findall(".//programme"):
+        text = content.decode("utf-8", errors="ignore")
+        debug_print("MUAZT RAW TEXT PREVIEW", text[:300])
+
+        root = ET.fromstring(text)
+
+        programmes = root.findall(".//programme")
+        print("MUAZT PROGRAMME COUNT:", len(programmes))
+
+        for prog in programmes:
             titles = prog.findall("title")
             if not titles:
                 continue
@@ -76,7 +89,8 @@ def fix_muazt_epg(content):
 
         return ET.tostring(root, encoding="utf-8")
 
-    except:
+    except Exception as e:
+        print("MUAZT FIX FAILED:", e)
         return content
 
 
@@ -85,24 +99,16 @@ def load_sources():
         return [x.strip() for x in f if x.strip().startswith("http")]
 
 
-def parse(content):
-    return safe_parse(content)
-
-
 def save_xml(file_xml, file_gz, items):
-    clean_items = []
 
-    for tag, xml in items:
-        if tag in ["programme", "channel"]:
-            clean_items.append((tag, xml))
-
-    print("\nCLEAN ITEMS TO WRITE:", len(clean_items))
+    print("CLEAN ITEMS TO WRITE:", len(items))
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
-        for tag, xml in clean_items:
-            f.write(xml)
+        for tag, xml in items:
+            if tag in ["programme", "channel"]:
+                f.write(xml)
         f.write(b"</tv>")
 
     with open(file_xml, "wb") as f:
@@ -114,9 +120,7 @@ def save_xml(file_xml, file_gz, items):
 
 def main():
     sources = load_sources()
-
     all_prog = []
-    arabic_prog = []
 
     for url in sources:
         print("\nSOURCE:", url)
@@ -124,75 +128,27 @@ def main():
         content = fetch_content(url)
         print("DOWNLOADED BYTES:", len(content))
 
-        if not content:
-            continue
-
-        # ================= GLOBAL MUAZT DEBUG (ALWAYS RUNS) =================
-        print("\n========== MUAZT DEBUG START ==========")
-        print("URL:", url)
-
-        try:
-            print("\nRAW PREVIEW:")
-            print(content.decode("utf-8", errors="ignore")[:600])
-        except:
-            print("RAW DECODE FAILED")
-
-        try:
+        if MUAZT_URL in url:
             content = fix_muazt_epg(content)
-        except:
-            pass
+
+        if url.endswith(".gz"):
+            try:
+                content = gzip.decompress(content)
+            except:
+                pass
 
         try:
-            print("\nAFTER FIX PREVIEW:")
-            print(content.decode("utf-8", errors="ignore")[:600])
-        except:
-            print("FIXED DECODE FAILED")
-
-        try:
-            root = ET.fromstring(content)
-
-            ch = 0
-            pr = 0
-            found = False
-
-            for c in root.findall("channel"):
-                ch += 1
-                t = ET.tostring(c, encoding="utf-8").decode("utf-8", errors="ignore")
-                if "Network Arabic" in t:
-                    print("\nFOUND CHANNEL:\n", t[:300])
-                    found = True
-
-            for p in root.findall("programme"):
-                pr += 1
-                t = ET.tostring(p, encoding="utf-8").decode("utf-8", errors="ignore")
-                if "Network Arabic" in t:
-                    print("\nFOUND PROGRAMME:\n", t[:300])
-                    found = True
-                    arabic_prog.append(("programme", ET.tostring(p, encoding="utf-8")))
-
-            print("\nCHANNEL COUNT:", ch)
-            print("PROGRAMME COUNT:", pr)
-            print("FOUND NETWORK ARABIC:", found)
-
+            xml_text = content.decode("utf-8", errors="ignore")
+            root = ET.fromstring(xml_text)
         except Exception as e:
             print("PARSE ERROR:", e)
-
-        print("========== MUAZT DEBUG END ==========\n")
-
-        # ================= NORMAL FLOW =================
-        events = parse(content)
+            continue
 
         count = 0
 
-        for event, elem in events:
-            tag = elem.tag
-            if tag in ["programme", "channel"]:
-                xml = ET.tostring(elem, encoding="utf-8")
-                all_prog.append((tag, xml))
-
-                if "arabic" in url.lower():
-                    arabic_prog.append((tag, xml))
-
+        for elem in root:
+            if elem.tag in ["programme", "channel"]:
+                all_prog.append((elem.tag, ET.tostring(elem, encoding="utf-8")))
                 count += 1
 
         print("ITEMS FROM FEED:", count)
@@ -200,7 +156,6 @@ def main():
     print("\nFINAL TOTAL ITEMS:", len(all_prog))
 
     save_xml(OUTPUT_XML, OUTPUT_XML_GZ, all_prog)
-    save_xml(OUTPUT_ARABIC_XML, OUTPUT_ARABIC_XML_GZ, arabic_prog)
 
 
 if __name__ == "__main__":
