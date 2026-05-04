@@ -94,28 +94,22 @@ def parse(content):
     return safe_parse(content)
 
 
-def save_xml(file_xml, file_gz, data):
+def save_xml(file_xml, file_gz, items):
 
-    print("\n================ XML BUILD DEBUG ================")
-    print("TOTAL PROGRAMMES TO WRITE:", len(data))
+    clean_items = []
 
-    for i, item in enumerate(data[:10]):
-        try:
-            preview = item[1].decode("utf-8", errors="ignore")[:300]
-        except:
-            preview = str(item[1])[:300]
+    for tag, xml in items:
+        if tag not in ["programme", "channel"]:
+            continue
+        clean_items.append((tag, xml))
 
-        print("\n--- ITEM", i, "---")
-        print("CHANNEL:", item[0])
-        print(preview)
-
-    print("=================================================\n")
+    print("\nCLEAN ITEMS TO WRITE:", len(clean_items))
 
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(b"<tv>\n")
-        for cid, data in data:
-            f.write(data)
+        for tag, xml in clean_items:
+            f.write(xml)
         f.write(b"</tv>")
 
     with open(file_xml, "wb") as f:
@@ -146,9 +140,12 @@ def main():
         events = parse(content)
 
         count = 0
+
         for event, elem in events:
-            all_prog.append((elem.tag, ET.tostring(elem, encoding="utf-8")))
-            count += 1
+            tag = elem.tag
+            if tag in ["programme", "channel"]:
+                all_prog.append((tag, ET.tostring(elem, encoding="utf-8")))
+                count += 1
 
         print("ITEMS FROM FEED:", count)
 
