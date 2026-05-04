@@ -39,26 +39,25 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Commit XML.GZ files
+      - name: Commit XML.GZ only
         run: |
           git add merged.xml.gz local.xml.gz arabic2.xml.gz index.html merge_epg.py
-
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update EPG (gz files)"
+            git commit -m "Auto-update EPG"
             git push origin main
           fi
 
-      - name: Create GitHub Release with XML files
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: latest
           name: "EPG Latest Build"
-          overwrite: true
           files: |
             merged.xml.gz
             local.xml.gz
             arabic2.xml.gz
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
