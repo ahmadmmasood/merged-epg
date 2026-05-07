@@ -25,28 +25,6 @@ remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "us", 
 regex_remove = re.compile(r"[^\w\s]")
 
 
-# -----------------------------
-# NORMALIZATION (NEW FIX CORE)
-# -----------------------------
-def normalize_id(cid):
-    if not cid:
-        return ""
-
-    cid = cid.lower()
-
-    cid = cid.replace("-dt", "")
-    cid = cid.replace("-hd", "")
-    cid = cid.replace("-tv", "")
-
-    cid = cid.replace("us.dc.", "")
-    cid = cid.replace("us.", "")
-
-    cid = regex_remove.sub("", cid)
-    cid = re.sub(r"\s+", "", cid)
-
-    return cid.strip()
-
-
 def clean_text(name):
     if not name:
         return ""
@@ -124,7 +102,7 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
     for event, elem in context:
 
         if elem.tag == "channel":
-            raw_id = normalize_id(elem.attrib.get("id", ""))
+            raw_id = elem.attrib.get("id", "")
             display = elem.findtext("display-name") or raw_id
 
             if "pacific" in display.lower():
@@ -157,18 +135,18 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
 
             if matched_display:
                 channel_matches[raw_id] = matched_display
-                programmes.append((raw_id, ET.tostring(elem, encoding="utf-8")))
 
             elem.clear()
 
         elif elem.tag == "programme":
 
-            raw_channel = normalize_id(elem.attrib.get("channel"))
+            raw_channel = elem.attrib.get("channel")
             start_str = elem.attrib.get("start")
 
-            if raw_channel not in channel_matches:
-                elem.clear()
-                continue
+            # 🔴 FIX: DO NOT DROP PROGRAMMES IF CHANNEL NOT YET REGISTERED
+            # This was causing WUSA / WJLA / WTTG / WRC to disappear
+            if raw_channel and raw_channel not in channel_matches:
+                channel_matches.setdefault(raw_channel, raw_channel)
 
             try:
                 start_dt = datetime.strptime(start_str.strip(), "%Y%m%d%H%M%S %z")
