@@ -37,7 +37,6 @@ jobs:
           ls -lah
           test -f merged.xml.gz || (echo "merged.xml.gz MISSING" && exit 1)
           test -f local.xml.gz || (echo "local.xml.gz MISSING" && exit 1)
-          test -f arabic2.xml.gz || (echo "arabic2.xml.gz MISSING" && exit 1)
 
       - name: Configure Git
         run: |
@@ -46,7 +45,7 @@ jobs:
 
       - name: Commit XML files
         run: |
-          git add merged.xml.gz local.xml.gz arabic2.xml.gz index.html merge_epg.py
+          git add merged.xml.gz local.xml.gz index.html merge_epg.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
@@ -62,6 +61,5 @@ jobs:
           files: |
             merged.xml.gz
             local.xml.gz
-            arabic2.xml.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
