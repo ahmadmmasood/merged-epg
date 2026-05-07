@@ -84,6 +84,13 @@ def fetch_content(url):
     return r.content
 
 
+# -----------------------------
+# CORE FIX: ID CONSISTENCY
+# -----------------------------
+def norm_id(v):
+    return (v or "").strip()
+
+
 def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7):
 
     channel_matches = {}
@@ -102,17 +109,13 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
     for event, elem in context:
 
         if elem.tag == "channel":
-            raw_id = elem.attrib.get("id", "")
+
+            raw_id = norm_id(elem.attrib.get("id"))
             display = elem.findtext("display-name") or raw_id
 
             if "pacific" in display.lower():
                 elem.clear()
                 continue
-
-            icons = elem.findall("icon")
-            for i, icon in enumerate(icons):
-                if i > 0:
-                    elem.remove(icon)
 
             cleaned_display = clean_text(display)
 
@@ -134,17 +137,18 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
                         break
 
             if matched_display:
+                # IMPORTANT: preserve exact ID (no rewriting)
                 channel_matches[raw_id] = matched_display
 
             elem.clear()
 
         elif elem.tag == "programme":
 
-            raw_channel = elem.attrib.get("channel")
+            raw_channel = norm_id(elem.attrib.get("channel"))
             start_str = elem.attrib.get("start")
 
-            # 🔴 FIX: DO NOT DROP PROGRAMMES IF CHANNEL NOT YET REGISTERED
-            # This was causing WUSA / WJLA / WTTG / WRC to disappear
+            # IMPORTANT FIX:
+            # DO NOT DROP — just ensure key exists
             if raw_channel and raw_channel not in channel_matches:
                 channel_matches.setdefault(raw_channel, raw_channel)
 
@@ -171,23 +175,23 @@ def save_merged_xml(channel_id_map, programmes, xml_filename, gz_filename=None):
 
         written_channels = set()
 
-        for raw_id, prog_xml in programmes:
-            if prog_xml.startswith(b"<channel") and raw_id not in written_channels:
-                f_out.write(prog_xml)
+        for raw_id, xml in programmes:
+            if xml.startswith(b"<channel") and raw_id not in written_channels:
+                f_out.write(xml)
                 written_channels.add(raw_id)
 
-        for raw_id, prog_xml in programmes:
-            if not prog_xml.startswith(b"<channel"):
-                f_out.write(prog_xml)
+        for raw_id, xml in programmes:
+            if not xml.startswith(b"<channel"):
+                f_out.write(xml)
 
         f_out.write(b"\n</tv>")
 
-    with open(xml_filename, "wb") as f_xml:
-        write_xml(f_xml)
+    with open(xml_filename, "wb") as f:
+        write_xml(f)
 
     if gz_filename:
-        with gzip.open(gz_filename, "wb") as f_gz:
-            write_xml(f_gz)
+        with gzip.open(gz_filename, "wb") as f:
+            write_xml(f)
 
 
 def create_local_from_merged(all_channel_map, all_programmes, local_channels):
@@ -241,12 +245,11 @@ def main():
 
         channel_map, programmes = parse_xml_stream(content, master_cleaned, local_channels)
 
-        if is_local_feed:
-            channel_map = {k: v for k, v in channel_map.items() if v in local_channels}
-        else:
-            channel_map = {k: v for k, v in channel_map.items() if v in non_local_channels}
+        # IMPORTANT FIX: no transformation, no rewriting, no collapsing
+        for k, v in channel_map.items():
+            if k not in all_channel_map:
+                all_channel_map[k] = v
 
-        all_channel_map.update(channel_map)
         all_programmes.extend(programmes)
 
     save_merged_xml(all_channel_map, all_programmes, OUTPUT_XML, OUTPUT_XML_GZ)
