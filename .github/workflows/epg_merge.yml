@@ -44,19 +44,18 @@ jobs:
             fi
           done
 
-      - name: Configure Git
+      - name: Commit XML files
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-
-      - name: Commit XML files
-        run: |
+          git fetch origin main
+          git reset --hard origin/main      # align with remote
           git add merged.xml.gz local.xml.gz index.html merge_epg.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "Auto-update EPG"
-            git push origin main
+            git push origin main --force    # overwrite remote safely
 
       - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v1
