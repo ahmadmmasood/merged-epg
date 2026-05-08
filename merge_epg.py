@@ -4,85 +4,130 @@ import requests
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime, timedelta
-import pytz
-import re
 
+# Output files
+OUTPUT_MERGED = "merged.xml"
+OUTPUT_MERGED_GZ = "merged.xml.gz"
+OUTPUT_LOCAL = "local.xml"
+OUTPUT_LOCAL_GZ = "local.xml.gz"
+
+# Configurable max_days
+MAX_DAYS = int(os.getenv("MAX_DAYS", 3))  # Default 3 days, set None for all
+
+# File paths
 MASTER_LIST_FILE = "master_channels.txt"
 EPG_SOURCES_FILE = "epg_sources.txt"
 
-OUTPUT_XML = "merged.xml"
-OUTPUT_XML_GZ = "merged.xml.gz"
+# ----------------------------
+# Helper functions
+# ----------------------------
 
-OUTPUT_LOCAL_XML = "local.xml"
-OUTPUT_LOCAL_XML_GZ = "local.xml.gz"
+def load_epg_sources(file_path=EPG_SOURCES_FILE):
+    sources = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                sources.append(line)
+    return sources
 
-INDEX_HTML = "index.html"
-
-remove_words = ["hd", "hdtv", "channel", "network", "west", "us", "us2"]
-regex_remove = re.compile(r"[^\w\s]")
-
-def clean_text(name, keep_direction=False):
-    if not name:
-        return ""
-    name = name.lower()
-    name = name.replace("×", "x").replace("/", " ").replace("(", " ").replace(")", " ").replace("&", " and ").replace("-", " ")
-    for word in remove_words:
-        if keep_direction and word == "east":
-            continue
-        name = re.sub(r"\b" + word + r"\b", " ", name)
-    name = regex_remove.sub(" ", name)
-    name = re.sub(r"\s+", " ", name)
-    return name.strip()
-
-def fetch_content(url):
+def fetch_epg(url):
     try:
         r = requests.get(url, timeout=60)
         r.raise_for_status()
-        return r.content
+        content = r.content
+        # Try gzip first
+        try:
+            with gzip.GzipFile(fileobj=BytesIO(content)) as f:
+                xml_data = f.read()
+        except OSError:
+            xml_data = content
+        return xml_data
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
         return b""
 
-def parse_xml(content_bytes):
+def parse_epg(xml_bytes):
     channels = {}
     programmes = []
 
-    if not content_bytes:
-        return channels, programmes
-
-    try:
-        f = gzip.open(BytesIO(content_bytes), "rb")
-        f.peek(1)
-    except:
-        f = BytesIO(content_bytes)
-
-    try:
-        context = ET.iterparse(f, events=("end",))
-    except:
-        return channels, programmes
-
-    for event, elem in context:
+    root = ET.fromstring(xml_bytes)
+    for elem in root:
         if elem.tag == "channel":
-            ch_id = elem.attrib.get("id", "").strip()
+            ch_id = elem.attrib.get("id")
             if ch_id:
                 channels[ch_id] = ET.tostring(elem, encoding="utf-8")
         elif elem.tag == "programme":
-            prog_xml = ET.tostring(elem, encoding="utf-8")
-            ch_id = elem.attrib.get("channel", "").strip()
+            ch_id = elem.attrib.get("channel")
             if ch_id:
-                programmes.append((ch_id, prog_xml))
-        elem.clear()
-
+                programmes.append((ch_id, ET.tostring(elem, encoding="utf-8")))
     return channels, programmes
 
+def deduplicate_icons(ch_xml):
+    """Remove duplicate icons in a channel"""
+    elem = ET.fromstring(ch_xml)
+    seen = set()
+    for icon in elem.findall("icon"):
+        src = icon.attrib.get("src", "")
+        if src in seen:
+            elem.remove(icon)
+        else:
+            seen.add(src)
+    return ET.tostring(elem, encoding="utf-8")
+
+def get_local_channels(master_file=MASTER_LIST_FILE):
+    """Return set of local DC/Baltimore OTA channel names (lowercase)"""
+    local_names = set()
+    with open(master_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    in_local = False
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            if "LOCAL CHANNELS" in line.upper():
+                in_local = True
+            elif in_local and line.startswith("#"):
+                break  # end of local section
+            continue
+        if in_local:
+            local_names.add(line.lower())
+    return local_names
+
+def filter_channels(all_channels, all_programmes, name_set, max_days=None):
+    """Filter channels and programmes by name set and optional max_days"""
+    filtered_ch = {}
+    for ch_id, ch_xml in all_channels.items():
+        elem = ET.fromstring(ch_xml)
+        disp_name = elem.findtext("display-name", "").strip().lower()
+        if disp_name in name_set:
+            filtered_ch[ch_id] = deduplicate_icons(ch_xml)
+
+    now = datetime.utcnow()
+    cutoff = now + timedelta(days=max_days) if max_days else None
+
+    filtered_prog = []
+    for ch_id, prog_xml in all_programmes:
+        if ch_id in filtered_ch:
+            if cutoff:
+                elem = ET.fromstring(prog_xml)
+                start = elem.attrib.get("start")
+                if start:
+                    dt = datetime.strptime(start[:14], "%Y%m%d%H%M%S")
+                    if dt <= cutoff:
+                        filtered_prog.append((ch_id, prog_xml))
+            else:
+                filtered_prog.append((ch_id, prog_xml))
+    return filtered_ch, filtered_prog
+
 def save_xml(channels, programmes, xml_filename, gz_filename=None):
-    def write_xml(f_out):
-        f_out.write(b'<?xml version="1.0" encoding="UTF-8"?>\n<tv generator-info-name="CustomEPG">\n')
+    def write_xml(f):
+        f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n<tv generator-info-name="CustomEPG">\n')
         for ch_xml in channels.values():
-            f_out.write(ch_xml)
+            f.write(ch_xml)
         for _, prog_xml in programmes:
-            f_out.write(prog_xml)
-        f_out.write(b"\n</tv>")
+            f.write(prog_xml)
+        f.write(b"\n</tv>")
 
     with open(xml_filename, "wb") as f:
         write_xml(f)
@@ -90,82 +135,44 @@ def save_xml(channels, programmes, xml_filename, gz_filename=None):
         with gzip.open(gz_filename, "wb") as f:
             write_xml(f)
 
-def load_master_list():
-    master_cleaned = {}
-    master_display = []
+# ----------------------------
+# Main workflow
+# ----------------------------
 
-    with open(MASTER_LIST_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                keep_dir = "LOCAL CHANNELS" in line.upper() or re.match(r"^[WK][A-Z]{2,4}-DT$", line)
-                master_cleaned[clean_text(line, keep_direction=keep_dir)] = line
-                master_display.append(line)
-    return master_cleaned, master_display
-
-def split_master(master_display):
-    local = set()
-    non_local = set()
-    local_section_started = False
-    for line in master_display:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            if "LOCAL CHANNELS" in line.upper():
-                local_section_started = True
-            continue
-        if re.match(r"^[WK][A-Z]{2,4}-DT$", line):
-            local.add(line)
-            continue
-        if local_section_started:
-            local.add(line)
-        else:
-            non_local.add(line)
-    return local, non_local
-
-def load_epg_sources():
-    sources = []
-    with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("http"):
-                sources.append(line)
-    return sources
-
-def filter_local_channels(all_channels, all_programmes, local_channels):
-    local_ch_map = {ch_id: xml for ch_id, xml in all_channels.items() if xml.decode().lower() in map(str.lower, local_channels)}
-    local_progs = [(ch_id, prog) for ch_id, prog in all_programmes if ch_id in local_ch_map]
-    if not local_ch_map:
-        # Ensure at least one channel to prevent broken XML
-        dummy = b'<channel id="DUMMY"><display-name>DUMMY</display-name></channel>'
-        local_ch_map["DUMMY"] = dummy
-    return local_ch_map, local_progs
-
-def main():
-    master_cleaned, master_display = load_master_list()
-    local_channels, non_local_channels = split_master(master_display)
+def main(max_days=None):
+    print("Loading EPG sources...")
     sources = load_epg_sources()
 
     all_channels = {}
     all_programmes = []
 
     for url in sources:
-        content = fetch_content(url)
-        chs, progs = parse_xml(content)
-        all_channels.update(chs)
-        all_programmes.extend(progs)
+        print(f"Fetching {url} ...")
+        xml_bytes = fetch_epg(url)
+        if xml_bytes:
+            chs, progs = parse_epg(xml_bytes)
+            all_channels.update(chs)
+            all_programmes.extend(progs)
 
-    # Save merged full XML
     if not all_channels:
-        # Ensure at least one channel to prevent broken XML
-        dummy = b'<channel id="DUMMY"><display-name>DUMMY</display-name></channel>'
-        all_channels["DUMMY"] = dummy
-    save_xml(all_channels, all_programmes, OUTPUT_XML, OUTPUT_XML_GZ)
+        print("No channels found in sources. Exiting.")
+        return
 
-    # Save local-only XML
-    local_ch_map, local_progs = filter_local_channels(all_channels, all_programmes, local_channels)
-    save_xml(local_ch_map, local_progs, OUTPUT_LOCAL_XML, OUTPUT_LOCAL_XML_GZ)
+    # --- Merged XML (all channels)
+    print("Saving merged XML...")
+    save_xml(all_channels, all_programmes, OUTPUT_MERGED, OUTPUT_MERGED_GZ)
 
-    print(f"Done. {OUTPUT_XML_GZ} and {OUTPUT_LOCAL_XML_GZ} ready.")
+    # --- Local XML (filtered channels)
+    print("Filtering local channels...")
+    local_names = get_local_channels()
+    local_ch_map, local_progs = filter_channels(all_channels, all_programmes, local_names, max_days=max_days)
+    print(f"{len(local_ch_map)} local channels found.")
+    save_xml(local_ch_map, local_progs, OUTPUT_LOCAL, OUTPUT_LOCAL_GZ)
 
+    print("Done. Files saved.")
+
+# ----------------------------
+# Entry point
+# ----------------------------
 if __name__ == "__main__":
-    main()
+    main(max_days=MAX_DAYS)
