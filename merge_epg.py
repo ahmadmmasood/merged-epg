@@ -24,7 +24,6 @@ MAX_DAYS = int(os.getenv("MAX_DAYS", 3))
 # ----------------------------
 
 def fetch_epg(url):
-    """Fetch and decompress XML from URL."""
     try:
         r = requests.get(url, timeout=60)
         r.raise_for_status()
@@ -40,10 +39,8 @@ def fetch_epg(url):
         return b""
 
 def parse_epg(xml_bytes):
-    """Parse XML into channels dict and programmes list."""
     channels = {}
     programmes = []
-
     root = ET.fromstring(xml_bytes)
     for elem in root:
         if elem.tag == "channel":
@@ -57,7 +54,6 @@ def parse_epg(xml_bytes):
     return channels, programmes
 
 def deduplicate_icons(ch_xml):
-    """Remove duplicate <icon> tags in a channel."""
     elem = ET.fromstring(ch_xml)
     seen = set()
     for icon in elem.findall("icon"):
@@ -69,7 +65,6 @@ def deduplicate_icons(ch_xml):
     return ET.tostring(elem, encoding="utf-8")
 
 def load_epg_sources(file_path=EPG_SOURCES_FILE):
-    """Return list of EPG source URLs."""
     sources = []
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -79,7 +74,6 @@ def load_epg_sources(file_path=EPG_SOURCES_FILE):
     return sources
 
 def get_local_channel_ids(master_file=MASTER_LIST_FILE):
-    """Return set of channel IDs for local channels (DC/Baltimore OTA)."""
     local_ids = set()
     with open(master_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -98,12 +92,14 @@ def get_local_channel_ids(master_file=MASTER_LIST_FILE):
     return local_ids
 
 def filter_local_channels(all_channels, all_programmes, local_ids, max_days=None):
-    """Return channels and programmes for local channels only."""
-    # Filter channels by ID
+    # Partial contains: channel ID contains any of the local IDs
     filtered_ch = {ch_id: deduplicate_icons(ch_xml)
-                   for ch_id, ch_xml in all_channels.items() if ch_id in local_ids}
+                   for ch_id, ch_xml in all_channels.items()
+                   if any(lid in ch_id for lid in local_ids)}
 
-    # Filter programmes by channel ID and optional MAX_DAYS
+    matched_ids = list(filtered_ch.keys())
+    print(f"Local channels matched: {matched_ids}")
+
     now = datetime.utcnow()
     cutoff = now + timedelta(days=max_days) if max_days else None
 
@@ -123,7 +119,6 @@ def filter_local_channels(all_channels, all_programmes, local_ids, max_days=None
     return filtered_ch, filtered_prog
 
 def save_xml(channels, programmes, xml_file, gz_file=None):
-    """Write channels + programmes to XML and optional gzip."""
     def write(f):
         f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n<tv generator-info-name="CustomEPG">\n')
         for ch_xml in channels.values():
@@ -141,7 +136,6 @@ def save_xml(channels, programmes, xml_file, gz_file=None):
 # ----------------------------
 # MAIN SCRIPT
 # ----------------------------
-
 def main(max_days=None):
     print("Loading EPG sources...")
     sources = load_epg_sources()
@@ -159,11 +153,9 @@ def main(max_days=None):
     print(f"Total channels fetched: {len(all_channels)}")
     print(f"Total programmes fetched: {len(all_programmes)}")
 
-    # --- Save merged XML (all channels) ---
     print("Saving merged XML...")
     save_xml(all_channels, all_programmes, OUTPUT_MERGED, OUTPUT_MERGED_GZ)
 
-    # --- Filter local channels ---
     print("Filtering local channels...")
     local_ids = get_local_channel_ids()
     local_ch_map, local_progs = filter_local_channels(all_channels, all_programmes, local_ids, max_days=max_days)
@@ -173,8 +165,5 @@ def main(max_days=None):
     save_xml(local_ch_map, local_progs, OUTPUT_LOCAL, OUTPUT_LOCAL_GZ)
     print("Done. Files saved.")
 
-# ----------------------------
-# ENTRY POINT
-# ----------------------------
 if __name__ == "__main__":
     main(max_days=MAX_DAYS)
