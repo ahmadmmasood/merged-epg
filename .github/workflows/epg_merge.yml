@@ -1,60 +1,44 @@
-name: Merge EPG Daily
+name: Update EPG
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:   # allows manual trigger
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: '0 */6 * * *'  # runs every 6 hours (UTC)
 
 jobs:
-  merge-epg:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests lxml pytz
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests lxml gzip
 
-      - name: Run EPG merge
-        run: python merge_epg.py
+    - name: Run EPG merge script
+      run: |
+        python merge_epg.py
 
-      - name: Verify outputs exist
-        run: |
-          echo "=== FILE CHECK ==="
-          ls -lah
-          test -f merged.xml.gz || (echo "merged.xml.gz MISSING" && exit 1)
-          test -f local.xml.gz || (echo "local.xml.gz MISSING" && exit 1)
+    - name: Verify generated files
+      run: |
+        ls -lh local.xml local.xml.gz merged.xml merged.xml.gz
+        head -n 20 local.xml
 
-      - name: Commit XML files
-        shell: bash
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git fetch origin main
-          git reset --hard origin/main
-          git add merged.xml.gz local.xml.gz index.html merge_epg.py
-          git diff --cached --quiet && echo "No changes to commit" || (git commit -m "Auto-update EPG" && git push origin main --force)
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.run_number }}
-          name: "EPG Build ${{ github.run_number }}"
-          files: |
-            merged.xml.gz
-            local.xml.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create or update latest release and upload files
+      uses: ncipollo/release-action@v1
+      with:
+        tag: latest
+        overwrite: true
+        files: |
+          local.xml
+          local.xml.gz
+          merged.xml
+          merged.xml.gz
