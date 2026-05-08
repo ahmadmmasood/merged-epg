@@ -29,7 +29,8 @@ jobs:
           pip install requests lxml pytz
 
       - name: Run EPG merge
-        run: python merge_epg.py
+        run: |
+          python merge_epg.py
 
       - name: Verify outputs exist
         run: |
