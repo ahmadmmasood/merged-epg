@@ -1,120 +1,156 @@
 #!/usr/bin/env python3
-import requests
 import gzip
-import io
-import xml.etree.ElementTree as ET
+import requests
+from lxml import etree
 from datetime import datetime, timedelta
 import pytz
 
-# -----------------------------
-# CONFIG
-# -----------------------------
 EPG_SOURCES_FILE = "epg_sources.txt"
 MASTER_CHANNELS_FILE = "master_channels.txt"
-MERGED_OUTPUT = "merged.xml"
-LOCAL_OUTPUT = "local.xml"
-DAYS_TO_KEEP = 3  # Optional: only keep X days of programming
+MERGED_XML_FILE = "merged.xml"
+LOCAL_XML_FILE = "local.xml"
+DAYS_TO_KEEP = 3  # optional, keeps N days of programming
+LOCAL_MATCH_MODE = "contains"  # "contains" partial matching
 
-# -----------------------------
-# Load master channels for filtering
-# -----------------------------
-with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-    master_channels = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-
-print(f"Loaded {len(master_channels)} master channels for filtering.")
-
-# -----------------------------
-# Fetch all XML sources
-# -----------------------------
 def fetch_xml(url):
     print(f"Fetching {url} ...")
     r = requests.get(url)
     r.raise_for_status()
-    data = r.content
+    content = r.content
     if url.endswith(".gz"):
-        with gzip.GzipFile(fileobj=io.BytesIO(data)) as gz:
-            data = gz.read()
-    return ET.fromstring(data)
+        content = gzip.decompress(content)
+    return etree.fromstring(content)
 
-sources = []
-with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
-    urls = [line.strip() for line in f if line.strip()]
-    for url in urls:
+def load_master_channels():
+    channels = []
+    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                channels.append(line.lower())
+    return channels
+
+def normalize_channel_id(channel_id):
+    """Remove suffix after dot, e.g., WJLA-DT.us_locals1 -> WJLA-DT"""
+    return channel_id.split(".")[0]
+
+def filter_local_channels(channels, master_channels):
+    matched = []
+    for ch in channels:
+        ch_name = ch.get("display-name") or ch.findtext("display-name")
+        if ch_name:
+            ch_name_lower = ch_name.lower()
+            for m in master_channels:
+                if LOCAL_MATCH_MODE == "contains" and m in ch_name_lower:
+                    matched.append(ch)
+                    break
+    return matched
+
+def filter_programs_by_channels(programmes, channel_ids):
+    channel_set = set(channel_ids)
+    return [p for p in programmes if normalize_channel_id(p.get("channel", "")) in channel_set]
+
+def filter_programs_by_days(programmes, days):
+    now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+    cutoff = now + timedelta(days=days)
+    filtered = []
+    for p in programmes:
+        start_str = p.get("start")
+        if not start_str:
+            continue
+        # Format: 20260507033500 +0000
         try:
-            tree = fetch_xml(url)
-            sources.append(tree)
+            start_dt = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S").replace(tzinfo=pytz.UTC)
+        except:
+            continue
+        if start_dt <= cutoff:
+            filtered.append(p)
+    return filtered
+
+def main():
+    print("Loading EPG sources...")
+    sources = []
+    with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                sources.append(line)
+
+    all_channels = []
+    all_programmes = []
+
+    for url in sources:
+        try:
+            xml_root = fetch_xml(url)
         except Exception as e:
-            print(f"Error fetching {url}: {e}")
+            print(f"Failed to fetch {url}: {e}")
+            continue
 
-print(f"Fetched {len(sources)} XML sources.")
+        channels = xml_root.findall("channel")
+        programmes = xml_root.findall("programme")
 
-# -----------------------------
-# Merge all channels and programmes
-# -----------------------------
-merged_root = ET.Element("tv")
-channels_dict = {}
-programmes_count = 0
+        # Normalize channel IDs
+        for ch in channels:
+            orig_id = ch.get("id")
+            ch.set("id", normalize_channel_id(orig_id))
 
-for tree in sources:
-    for channel in tree.findall("channel"):
-        ch_id = channel.get("id")
-        if ch_id not in channels_dict:
-            merged_root.append(channel)
-            channels_dict[ch_id] = channel
+        for p in programmes:
+            p.set("channel", normalize_channel_id(p.get("channel", "")))
 
-    for programme in tree.findall("programme"):
-        # Optional: filter by 3 days
-        if DAYS_TO_KEEP:
-            start_str = programme.get("start")  # format: YYYYMMDDHHMMSS ±HHMM
-            start_dt = datetime.strptime(start_str[:14], "%Y%m%d%H%M%S")
-            if start_dt > datetime.utcnow() + timedelta(days=DAYS_TO_KEEP):
-                continue
-        merged_root.append(programme)
-        programmes_count += 1
+        all_channels.extend(channels)
+        all_programmes.extend(programmes)
 
-print(f"Total channels fetched: {len(channels_dict)}")
-print(f"Total programmes fetched: {programmes_count}")
+    print(f"Total channels fetched: {len(all_channels)}")
+    print(f"Total programmes fetched: {len(all_programmes)}")
 
-# -----------------------------
-# Save merged XML and GZ
-# -----------------------------
-merged_tree = ET.ElementTree(merged_root)
-merged_tree.write(MERGED_OUTPUT, encoding="utf-8", xml_declaration=True)
-with gzip.open(MERGED_OUTPUT + ".gz", "wb") as f:
-    f.write(ET.tostring(merged_root, encoding="utf-8"))
-print(f"Saved merged XML and {MERGED_OUTPUT}.gz")
+    # Remove duplicate channels by ID
+    unique_channels = {}
+    for ch in all_channels:
+        unique_channels[ch.get("id")] = ch
+    all_channels = list(unique_channels.values())
 
-# -----------------------------
-# Filter local channels
-# -----------------------------
-local_root = ET.Element("tv")
-local_channels_matched = []
-local_programmes_count = 0
+    # Filter programs by optional DAYS_TO_KEEP
+    if DAYS_TO_KEEP:
+        all_programmes = filter_programs_by_days(all_programmes, DAYS_TO_KEEP)
 
-for ch in channels_dict.values():
-    display_name = ch.findtext("display-name")
-    if display_name:
-        for master_name in master_channels:
-            if master_name.lower() in display_name.lower():
-                local_root.append(ch)
-                local_channels_matched.append(display_name)
-                break
+    # Save merged XML
+    merged_root = etree.Element("tv")
+    for ch in all_channels:
+        merged_root.append(ch)
+    for p in all_programmes:
+        merged_root.append(p)
 
-for prog in merged_root.findall("programme"):
-    ch_id = prog.get("channel")
-    if ch_id in [c.get("id") for c in local_root.findall("channel")]:
-        local_root.append(prog)
-        local_programmes_count += 1
+    merged_xml_str = etree.tostring(merged_root, encoding="utf-8", xml_declaration=True)
+    with open(MERGED_XML_FILE, "wb") as f:
+        f.write(merged_xml_str)
+    with gzip.open(MERGED_XML_FILE + ".gz", "wb") as f:
+        f.write(merged_xml_str)
+    print(f"Saved merged XML ({MERGED_XML_FILE}, {MERGED_XML_FILE}.gz)")
 
-print(f"Local channels matched: {local_channels_matched}")
-print(f"Local channels included: {len(local_channels_matched)}")
-print(f"Local programmes included: {local_programmes_count}")
+    # Load master channels for local filtering
+    master_channels = load_master_channels()
 
-# -----------------------------
-# Save local XML and GZ
-# -----------------------------
-local_tree = ET.ElementTree(local_root)
-local_tree.write(LOCAL_OUTPUT, encoding="utf-8", xml_declaration=True)
-with gzip.open(LOCAL_OUTPUT + ".gz", "wb") as f:
-    f.write(ET.tostring(local_root, encoding="utf-8"))
-print(f"Saved local XML and {LOCAL_OUTPUT}.gz")
+    # Filter local channels
+    local_channels = filter_local_channels(all_channels, master_channels)
+    local_channel_ids = [ch.get("id") for ch in local_channels]
+    local_programmes = filter_programs_by_channels(all_programmes, local_channel_ids)
+
+    print(f"Local channels matched: {[ch.get('id') for ch in local_channels]}")
+    print(f"Local programmes included: {len(local_programmes)}")
+
+    # Save local XML
+    local_root = etree.Element("tv")
+    for ch in local_channels:
+        local_root.append(ch)
+    for p in local_programmes:
+        local_root.append(p)
+
+    local_xml_str = etree.tostring(local_root, encoding="utf-8", xml_declaration=True)
+    with open(LOCAL_XML_FILE, "wb") as f:
+        f.write(local_xml_str)
+    with gzip.open(LOCAL_XML_FILE + ".gz", "wb") as f:
+        f.write(local_xml_str)
+    print(f"Saved local XML ({LOCAL_XML_FILE}, {LOCAL_XML_FILE}.gz)")
+
+if __name__ == "__main__":
+    main()
