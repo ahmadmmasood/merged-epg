@@ -35,8 +35,14 @@ jobs:
         run: |
           echo "=== FILE CHECK ==="
           ls -lah
-          test -f merged.xml.gz || (echo "merged.xml.gz MISSING" && exit 1)
-          test -f local.xml.gz || (echo "local.xml.gz MISSING" && exit 1)
+          for file in merged.xml.gz local.xml.gz; do
+            if [ ! -f "$file" ]; then
+              echo "$file MISSING"
+              exit 1
+            else
+              echo "$file size: $(du -h $file | cut -f1)"
+            fi
+          done
 
       - name: Configure Git
         run: |
@@ -51,15 +57,15 @@ jobs:
           else
             git commit -m "Auto-update EPG"
             git push origin main
-          fi
 
-      - name: Create GitHub Release
+      - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.run_number }}
+          tag_name: latest          # always use 'latest' tag
           name: "EPG Build ${{ github.run_number }}"
           files: |
             merged.xml.gz
             local.xml.gz
+          allow_updates: true       # overwrite previous latest release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
