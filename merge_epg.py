@@ -21,17 +21,29 @@ INDEX_HTML = "index.html"
 
 LOCAL_FEED_URL = "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz"
 
-remove_words = ["hd", "hdtv", "tv", "channel", "network", "east", "west", "us", "us2"]
+# Words to remove only for cleaning fuzzy matching (do not break local channels)
+remove_words = ["hd", "hdtv", "channel", "network", "west", "us", "us2"]
 regex_remove = re.compile(r"[^\w\s]")
 
 
-def clean_text(name):
+def clean_text(name, keep_direction=False):
+    """
+    Normalize a channel name for matching:
+    - Lowercase
+    - Replace some symbols with spaces
+    - Remove remove_words except east if keep_direction=True
+    - Collapse multiple spaces
+    """
     if not name:
         return ""
     name = name.lower()
     name = name.replace("×", "x").replace("/", " ").replace("(", " ").replace(")", " ").replace("&", " and ").replace("-", " ")
+    
     for word in remove_words:
+        if keep_direction and word == "east":
+            continue
         name = re.sub(r"\b" + word + r"\b", " ", name)
+    
     name = regex_remove.sub(" ", name)
     name = re.sub(r"\s+", " ", name)
     return name.strip()
@@ -49,21 +61,43 @@ def load_master_list():
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
-                master_cleaned[clean_text(line)] = line
+                # Use keep_direction=True for local channels
+                keep_dir = "LOCAL CHANNELS" in line.upper() or re.match(r"^[WK][A-Z]{2,4}-DT$", line)
+                master_cleaned[clean_text(line, keep_direction=keep_dir)] = line
                 master_display.append(line)
 
     return master_cleaned, master_display
 
 
 def split_master(master_display):
+    """
+    Return sets of local and non-local channels.
+    Local channels include:
+    - All W/K call-sign DT channels
+    - All channels under LOCAL CHANNELS section
+    """
     local = set()
     non_local = set()
 
-    for ch in master_display:
-        if re.match(r"^[WK][A-Z]{2,4}-DT$", ch):
-            local.add(ch)
+    local_section_started = False
+
+    for line in master_display:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            if "LOCAL CHANNELS" in line.upper():
+                local_section_started = True
+            continue
+
+        # Add standard call-sign DT channels
+        if re.match(r"^[WK][A-Z]{2,4}-DT$", line):
+            local.add(line)
+            continue
+
+        # Add all channels under LOCAL CHANNELS section
+        if local_section_started:
+            local.add(line)
         else:
-            non_local.add(ch)
+            non_local.add(line)
 
     return local, non_local
 
@@ -84,9 +118,6 @@ def fetch_content(url):
     return r.content
 
 
-# -----------------------------
-# CORE FIX: ID CONSISTENCY
-# -----------------------------
 def norm_id(v):
     return (v or "").strip()
 
@@ -111,25 +142,28 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
         if elem.tag == "channel":
 
             raw_id = norm_id(elem.attrib.get("id"))
+            normalized_id = re.sub(r"(-DT\d*|-HD|-SD)$", "", raw_id)
+
             display = elem.findtext("display-name") or raw_id
 
-            if "pacific" in display.lower():
-                elem.clear()
-                continue
-
-            cleaned_display = clean_text(display)
+            # Determine if local channel (keep east)
+            keep_dir = display in local_channels
+            cleaned_display = clean_text(display, keep_direction=keep_dir)
 
             matched_display = None
 
+            # Exact match
             if cleaned_display in master_cleaned:
                 matched_display = master_cleaned[cleaned_display]
 
+            # Subset match
             if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
                     if set(master_clean.split()).issubset(set(cleaned_display.split())):
                         matched_display = master_disp
                         break
 
+            # Fuzzy match
             if not matched_display:
                 for master_clean, master_disp in master_cleaned.items():
                     if similar(cleaned_display, master_clean) >= 0.7:
@@ -137,20 +171,19 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
                         break
 
             if matched_display:
-                # IMPORTANT: preserve exact ID (no rewriting)
-                channel_matches[raw_id] = matched_display
+                channel_matches[normalized_id] = matched_display
 
             elem.clear()
 
         elif elem.tag == "programme":
 
             raw_channel = norm_id(elem.attrib.get("channel"))
-            start_str = elem.attrib.get("start")
+            normalized_channel = re.sub(r"(-DT\d*|-HD|-SD)$", "", raw_channel)
 
-            # IMPORTANT FIX:
-            # DO NOT DROP — just ensure key exists
-            if raw_channel and raw_channel not in channel_matches:
-                channel_matches.setdefault(raw_channel, raw_channel)
+            start_str = elem.attrib.get("start")
+            if not start_str:
+                elem.clear()
+                continue
 
             try:
                 start_dt = datetime.strptime(start_str.strip(), "%Y%m%d%H%M%S %z")
@@ -159,8 +192,11 @@ def parse_xml_stream(content_bytes, master_cleaned, local_channels, days_limit=7
                 elem.clear()
                 continue
 
+            if normalized_channel and normalized_channel not in channel_matches:
+                channel_matches.setdefault(normalized_channel, normalized_channel)
+
             if start_dt <= cutoff:
-                programmes.append((raw_channel, ET.tostring(elem, encoding="utf-8")))
+                programmes.append((normalized_channel, ET.tostring(elem, encoding="utf-8")))
 
             elem.clear()
 
@@ -241,11 +277,8 @@ def main():
         if not content:
             continue
 
-        is_local_feed = (url == LOCAL_FEED_URL)
-
         channel_map, programmes = parse_xml_stream(content, master_cleaned, local_channels)
 
-        # IMPORTANT FIX: no transformation, no rewriting, no collapsing
         for k, v in channel_map.items():
             if k not in all_channel_map:
                 all_channel_map[k] = v
@@ -255,6 +288,11 @@ def main():
     save_merged_xml(all_channel_map, all_programmes, OUTPUT_XML, OUTPUT_XML_GZ)
     create_local_from_merged(all_channel_map, all_programmes, local_channels)
     update_index(master_display, set(all_channel_map.values()))
+
+    # Debug: check local channels with missing programs
+    missing_programs = [ch for ch in local_channels if ch not in all_channel_map.values()]
+    if missing_programs:
+        print("Warning: local channels missing programs:", missing_programs)
 
     print("Done.")
 
