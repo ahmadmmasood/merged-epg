@@ -46,17 +46,18 @@ jobs:
           done
 
       - name: Commit XML files
+        shell: bash
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git fetch origin main
-          git reset --hard origin/main      # align with remote
+          git reset --hard origin/main
           git add merged.xml.gz local.xml.gz index.html merge_epg.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "Auto-update EPG"
-            git push origin main --force    # overwrite remote safely
+            git push origin main --force
 
       - name: Create/Update GitHub Release
         uses: softprops/action-gh-release@v1
