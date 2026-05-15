@@ -5,7 +5,7 @@ from io import BytesIO
 import re
 
 # =========================
-# LOAD INPUT FILES
+# LOAD CONFIG FILES
 # =========================
 
 with open("epg_sources.txt", "r") as f:
@@ -15,7 +15,7 @@ with open("master_channels.txt", "r") as f:
     MASTER_LIST = [x.strip() for x in f if x.strip()]
 
 # =========================
-# NORMALIZER (MATCH ONLY)
+# NORMALIZE (MATCH ONLY)
 # =========================
 
 def norm(text):
@@ -53,7 +53,7 @@ for url in SOURCES:
         print(f"Failed {url}: {e}")
 
 # =========================
-# INDEX DATA
+# INDEX CHANNELS + PROGRAMMES
 # =========================
 
 channels = {}
@@ -76,13 +76,13 @@ for tree in trees:
 # MATCH FUNCTION
 # =========================
 
-def is_in_master(channel):
-    cid = channel.get("id", "")
-    name = "".join(channel.itertext())
+def is_master(ch):
+    cid = ch.get("id", "")
+    name = "".join(ch.itertext())
     return norm(cid) in MASTER_SET or norm(name) in MASTER_SET
 
 # =========================
-# BUILD OUTPUTS
+# BUILD OUTPUT XML
 # =========================
 
 merged_root = ET.Element("tv")
@@ -91,26 +91,31 @@ local_root = ET.Element("tv")
 for cid, ch in channels.items():
     merged_root.append(ch)
 
-    if is_in_master(ch):
+    if is_master(ch):
         local_root.append(ch)
 
         for p in programmes.get(cid, []):
             local_root.append(p)
 
 # =========================
-# SAVE OUTPUTS
+# SAVE OUTPUTS (XML + GZ)
 # =========================
 
-ET.ElementTree(merged_root).write(
-    "merged.xml",
-    encoding="utf-8",
-    xml_declaration=True
-)
+merged_xml = ET.tostring(merged_root, encoding="utf-8", xml_declaration=True)
+local_xml = ET.tostring(local_root, encoding="utf-8", xml_declaration=True)
 
-ET.ElementTree(local_root).write(
-    "local.xml",
-    encoding="utf-8",
-    xml_declaration=True
-)
+with open("merged.xml", "wb") as f:
+    f.write(merged_xml)
+
+with open("local.xml", "wb") as f:
+    f.write(local_xml)
+
+with gzip.open("merged.xml.gz", "wb") as f:
+    f.write(merged_xml)
+
+with gzip.open("local.xml.gz", "wb") as f:
+    f.write(local_xml)
 
 print("Done")
+print(f"Merged channels: {len(channels)}")
+print(f"Local channels: {sum(1 for c in channels.values() if is_master(c))}")
