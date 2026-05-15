@@ -31,20 +31,17 @@ def fetch_xml(url):
 
 
 # -------------------------
-# NORMALIZER
+# NORMALIZE (FAST)
 # -------------------------
 
 def normalize(text):
     if not text:
         return ""
-
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]", "", text)
-    return text
+    return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
 # -------------------------
-# LOAD MASTER (MERGED)
+# LOAD MASTER
 # -------------------------
 
 def load_master_keywords():
@@ -75,7 +72,6 @@ def load_local_list():
             if capture:
                 if line.startswith("#================"):
                     continue
-
                 if line and not line.startswith("#"):
                     items.add(line)
 
@@ -96,19 +92,26 @@ def filter_merged_channels(channels, keywords):
 
 
 # -------------------------
-# FIXED PROGRAMME FILTER (IMPORTANT FIX)
+# FAST PROGRAMME FILTER (FIXED)
 # -------------------------
 
-def filter_programmes(programmes, allowed):
-    allowed = set(allowed)
+def filter_programmes(programmes, allowed_ids):
+    """
+    KEY FIX:
+    - NO fuzzy matching
+    - NO 'any()'
+    - NO repeated normalization loops
+    - single-pass hash lookup
+    """
+
+    allowed = set(allowed_ids)
 
     result = []
 
     for p in programmes:
-        cid = p.get("channel", "")
+        cid = normalize(p.get("channel", ""))
 
-        # flexible match (this is the final fix)
-        if any(a in normalize(cid) for a in allowed):
+        if cid in allowed:
             result.append(p)
 
     return result
