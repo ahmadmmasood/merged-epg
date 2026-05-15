@@ -30,7 +30,7 @@ def fetch_xml(url):
 
 
 # -------------------------
-# LOAD MASTER FILE
+# LOAD MASTER (MERGED KEYWORDS)
 # -------------------------
 
 def load_master_keywords():
@@ -43,11 +43,11 @@ def load_master_keywords():
 
 
 # -------------------------
-# LOAD LOCAL SECTION
+# LOAD LOCAL CHANNEL IDS (STRICT)
 # -------------------------
 
-def load_local_keywords():
-    keywords = set()
+def load_local_channel_ids():
+    ids = set()
     capture = False
 
     with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
@@ -63,13 +63,13 @@ def load_local_keywords():
                     continue
 
                 if line and not line.startswith("#"):
-                    keywords.add(line.lower())
+                    ids.add(line.lower())
 
-    return keywords
+    return ids
 
 
 # -------------------------
-# MERGED FILTER
+# MERGED FILTER (unchanged idea)
 # -------------------------
 
 def filter_merged_channels(channels, keywords):
@@ -82,31 +82,7 @@ def filter_merged_channels(channels, keywords):
 
 
 # -------------------------
-# LOCAL FILTER (SAFE MATCH)
-# -------------------------
-
-def is_local_channel(ch, keywords):
-    name = ch.findtext("display-name", default="").lower()
-    cid = ch.get("id", "").lower()
-
-    base_id = cid.split(".")[0]
-
-    for k in keywords:
-        if k in name or k in base_id:
-            return True
-
-    return False
-
-
-def build_local_channels(all_channels, keywords):
-    return [
-        ch for ch in all_channels
-        if is_local_channel(ch, keywords)
-    ]
-
-
-# -------------------------
-# PROGRAMME FILTER
+# PROGRAMME FILTER (FIXED - NO SPLIT)
 # -------------------------
 
 def filter_programmes(programmes, allowed_ids):
@@ -114,7 +90,7 @@ def filter_programmes(programmes, allowed_ids):
 
     return [
         p for p in programmes
-        if p.get("channel", "").lower().split(".")[0] in allowed
+        if p.get("channel", "").lower() in allowed
     ]
 
 
@@ -183,35 +159,25 @@ def main():
     save_xml(merged_root, MERGED_XML_FILE)
 
     # ---------------- LOCAL ----------------
-    local_keywords = load_local_keywords()
+    local_ids = load_local_channel_ids()
 
-    print("\n--- LOCAL DEBUG START ---")
-    print("LOCAL KEYWORDS COUNT:", len(local_keywords))
-    print("SAMPLE KEYWORDS:", list(local_keywords)[:20])
+    print("\n--- LOCAL DEBUG ---")
+    print("LOCAL CHANNEL IDS LOADED:", len(local_ids))
+    print("SAMPLE IDS:", list(local_ids)[:20])
 
-    local_channels = build_local_channels(all_channels, local_keywords)
+    local_channels = [
+        ch for ch in all_channels
+        if ch.get("id", "").lower() in local_ids
+    ]
+
+    local_programmes = filter_programmes(all_programmes, local_ids)
 
     print("\nLOCAL CHANNELS FOUND:", len(local_channels))
+    print("LOCAL PROGRAMMES FOUND:", len(local_programmes))
 
     print("\nSAMPLE LOCAL CHANNELS:")
     for ch in local_channels[:10]:
         print(" -", ch.get("id"), "|", ch.findtext("display-name"))
-
-    local_ids = [ch.get("id", "") for ch in local_channels]
-
-    local_programmes = [
-        p for p in all_programmes
-        if p.get("channel", "").lower().split(".")[0] in local_ids
-    ]
-
-    print("\nLOCAL PROGRAMMES FOUND:", len(local_programmes))
-
-    if len(local_channels) == 0:
-        print("\n❌ WARNING: LOCAL CHANNELS = 0 (nothing will appear in local.xml)")
-
-        print("\nCHECK FIRST FEW FEED CHANNEL IDs:")
-        for ch in all_channels[:20]:
-            print(" -", ch.get("id"), "|", ch.findtext("display-name"))
 
     # ---------------- SAVE LOCAL ----------------
     local_root = etree.Element("tv")
