@@ -3,6 +3,7 @@
 import gzip
 import requests
 from lxml import etree
+import re
 
 EPG_SOURCES_FILE = "epg_sources.txt"
 MASTER_CHANNELS_FILE = "master_channels.txt"
@@ -30,7 +31,23 @@ def fetch_xml(url):
 
 
 # -------------------------
-# LOAD MASTER (MERGED KEYWORDS)
+# NORMALIZER (KEY FIX)
+# -------------------------
+
+def normalize(text):
+    if not text:
+        return ""
+
+    text = text.lower()
+
+    # remove everything except letters/numbers
+    text = re.sub(r"[^a-z0-9]", "", text)
+
+    return text
+
+
+# -------------------------
+# LOAD MASTER (MERGED)
 # -------------------------
 
 def load_master_keywords():
@@ -43,11 +60,11 @@ def load_master_keywords():
 
 
 # -------------------------
-# LOAD LOCAL CHANNEL IDS (STRICT)
+# LOAD LOCAL LIST
 # -------------------------
 
-def load_local_channel_ids():
-    ids = set()
+def load_local_list():
+    items = set()
     capture = False
 
     with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
@@ -63,13 +80,13 @@ def load_local_channel_ids():
                     continue
 
                 if line and not line.startswith("#"):
-                    ids.add(line.lower())
+                    items.add(line)
 
-    return ids
+    return items
 
 
 # -------------------------
-# MERGED FILTER (unchanged idea)
+# MERGED FILTER (unchanged logic)
 # -------------------------
 
 def filter_merged_channels(channels, keywords):
@@ -82,16 +99,20 @@ def filter_merged_channels(channels, keywords):
 
 
 # -------------------------
-# PROGRAMME FILTER (FIXED - NO SPLIT)
+# PROGRAMME FILTER (SAFE MATCH)
 # -------------------------
 
 def filter_programmes(programmes, allowed_ids):
     allowed = set(allowed_ids)
 
-    return [
-        p for p in programmes
-        if p.get("channel", "").lower() in allowed
-    ]
+    result = []
+
+    for p in programmes:
+        cid = normalize(p.get("channel", ""))
+        if cid in allowed:
+            result.append(p)
+
+    return result
 
 
 # -------------------------
@@ -159,25 +180,24 @@ def main():
     save_xml(merged_root, MERGED_XML_FILE)
 
     # ---------------- LOCAL ----------------
-    local_ids = load_local_channel_ids()
+    local_raw = load_local_list()
+
+    local_allowed = set(normalize(x) for x in local_raw)
 
     print("\n--- LOCAL DEBUG ---")
-    print("LOCAL CHANNEL IDS LOADED:", len(local_ids))
-    print("SAMPLE IDS:", list(local_ids)[:20])
+    print("LOCAL ITEMS:", len(local_allowed))
+    print("SAMPLE:", list(local_allowed)[:20])
 
     local_channels = [
         ch for ch in all_channels
-        if ch.get("id", "").lower() in local_ids
+        if normalize(ch.get("id", "")) in local_allowed
+        or normalize(ch.findtext("display-name", "")) in local_allowed
     ]
 
-    local_programmes = filter_programmes(all_programmes, local_ids)
+    local_programmes = filter_programmes(all_programmes, local_allowed)
 
     print("\nLOCAL CHANNELS FOUND:", len(local_channels))
     print("LOCAL PROGRAMMES FOUND:", len(local_programmes))
-
-    print("\nSAMPLE LOCAL CHANNELS:")
-    for ch in local_channels[:10]:
-        print(" -", ch.get("id"), "|", ch.findtext("display-name"))
 
     # ---------------- SAVE LOCAL ----------------
     local_root = etree.Element("tv")
