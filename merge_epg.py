@@ -31,7 +31,7 @@ def fetch_xml(url):
 
 
 # -------------------------
-# NORMALIZER (KEY FIX)
+# NORMALIZER
 # -------------------------
 
 def normalize(text):
@@ -39,10 +39,7 @@ def normalize(text):
         return ""
 
     text = text.lower()
-
-    # remove everything except letters/numbers
     text = re.sub(r"[^a-z0-9]", "", text)
-
     return text
 
 
@@ -86,7 +83,7 @@ def load_local_list():
 
 
 # -------------------------
-# MERGED FILTER (unchanged logic)
+# MERGED FILTER
 # -------------------------
 
 def filter_merged_channels(channels, keywords):
@@ -99,17 +96,19 @@ def filter_merged_channels(channels, keywords):
 
 
 # -------------------------
-# PROGRAMME FILTER (SAFE MATCH)
+# FIXED PROGRAMME FILTER (IMPORTANT FIX)
 # -------------------------
 
-def filter_programmes(programmes, allowed_ids):
-    allowed = set(allowed_ids)
+def filter_programmes(programmes, allowed):
+    allowed = set(allowed)
 
     result = []
 
     for p in programmes:
-        cid = normalize(p.get("channel", ""))
-        if cid in allowed:
+        cid = p.get("channel", "")
+
+        # flexible match (this is the final fix)
+        if any(a in normalize(cid) for a in allowed):
             result.append(p)
 
     return result
