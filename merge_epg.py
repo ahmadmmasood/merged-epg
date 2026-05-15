@@ -9,17 +9,18 @@ MASTER_CHANNELS_FILE = "master_channels.txt"
 MERGED_XML_FILE = "merged.xml"
 LOCAL_XML_FILE = "local.xml"
 
+
 # -------------------------
 # LOAD MASTER LIST
 # -------------------------
 def load_master_list():
-    tiers = []
     with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                tiers.append(line.lower())
-    return tiers
+        return [
+            line.strip().lower()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+
 
 # -------------------------
 # FETCH XML
@@ -35,18 +36,18 @@ def fetch_xml(url):
 
     return etree.fromstring(data)
 
-# -------------------------
-# CHANNEL NAME
-# -------------------------
-def channel_name(ch):
-    return (ch.findtext("display-name") or "").strip()
 
 # -------------------------
-# MATCH LOGIC (SIMPLE)
+# HELPERS
 # -------------------------
-def matches(name, master_list):
+def display_name(ch):
+    return (ch.findtext("display-name") or "").strip()
+
+
+def matches_local(name, master_list):
     n = name.lower()
     return any(m in n for m in master_list)
+
 
 # -------------------------
 # MAIN
@@ -55,13 +56,17 @@ def main():
     master_list = load_master_list()
 
     with open(EPG_SOURCES_FILE, "r", encoding="utf-8") as f:
-        sources = [x.strip() for x in f if x.strip() and not x.startswith("#")]
+        sources = [
+            line.strip()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
 
-    all_channels = []
-    all_programmes = []
+    all_channels = {}
+    all_programmes = {}
 
     # -------------------------
-    # LOAD ALL SOURCES
+    # LOAD SOURCES
     # -------------------------
     for url in sources:
         try:
@@ -70,48 +75,34 @@ def main():
             print(f"FAILED {url}: {e}")
             continue
 
-        all_channels.extend(root.findall("channel"))
-        all_programmes.extend(root.findall("programme"))
-
-    print(f"TOTAL CHANNELS: {len(all_channels)}")
-    print(f"TOTAL PROGRAMMES: {len(all_programmes)}")
-
-    # -------------------------
-    # FILTER CHANNELS (MASTER LIST ONLY)
-    # -------------------------
-    selected_channels = []
-    selected_ids = set()
-
-    for ch in all_channels:
-        name = channel_name(ch)
-
-        if name and matches(name, master_list):
-            selected_channels.append(ch)
+        # CHANNELS (dedupe by id)
+        for ch in root.findall("channel"):
             cid = ch.get("id")
-            if cid:
-                selected_ids.add(cid)
+            if cid and cid not in all_channels:
+                all_channels[cid] = ch
 
-    print(f"SELECTED CHANNELS: {len(selected_channels)}")
+        # PROGRAMMES (dedupe by composite key)
+        for p in root.findall("programme"):
+            key = (
+                p.get("channel"),
+                p.get("start"),
+                (p.findtext("title") or "").strip()
+            )
+            if key not in all_programmes:
+                all_programmes[key] = p
+
+    print(f"TOTAL UNIQUE CHANNELS: {len(all_channels)}")
+    print(f"TOTAL UNIQUE PROGRAMMES: {len(all_programmes)}")
 
     # -------------------------
-    # FILTER PROGRAMMES (STRICT ID MATCH)
-    # -------------------------
-    selected_programmes = [
-        p for p in all_programmes
-        if p.get("channel") in selected_ids
-    ]
-
-    print(f"SELECTED PROGRAMMES: {len(selected_programmes)}")
-
-    # -------------------------
-    # WRITE MERGED XML
+    # BUILD MERGED XML
     # -------------------------
     merged_root = etree.Element("tv")
 
-    for ch in selected_channels:
+    for ch in all_channels.values():
         merged_root.append(ch)
 
-    for p in selected_programmes:
+    for p in all_programmes.values():
         merged_root.append(p)
 
     merged_data = etree.tostring(
@@ -127,36 +118,32 @@ def main():
     with gzip.open(MERGED_XML_FILE + ".gz", "wb") as f:
         f.write(merged_data)
 
+    print("Saved merged.xml")
+
+
     # -------------------------
-    # LOCAL = ONLY LOCAL SECTION
+    # LOCAL FILTER (MASTER LIST ONLY)
     # -------------------------
-    local_keywords = [
-        "wrc", "wttg", "wjla", "wusa", "wdca", "wnuv",
-        "wbal", "wmar", "wmpb", "wfdc", "wdvm", "weta", "whut",
-        "comet", "charge", "grit", "quest", "antenna", "laff",
-        "start tv", "buzzr", "mpt", "world channel"
-    ]
+    local_channels = {}
+    local_programmes = {}
 
-    def is_local(name):
-        n = name.lower()
-        return any(k in n for k in local_keywords)
+    for cid, ch in all_channels.items():
+        name = display_name(ch)
 
-    local_channels = []
-    local_ids = set()
+        if name and matches_local(name, master_list):
+            local_channels[cid] = ch
 
-    for ch in all_channels:
-        name = channel_name(ch)
+    local_ids = set(local_channels.keys())
 
-        if name and is_local(name):
-            local_channels.append(ch)
-            cid = ch.get("id")
-            if cid:
-                local_ids.add(cid)
-
-    local_programmes = [
-        p for p in all_programmes
-        if p.get("channel") in local_ids
-    ]
+    for p in all_programmes.values():
+        if p.get("channel") in local_ids:
+            key = (
+                p.get("channel"),
+                p.get("start"),
+                (p.findtext("title") or "").strip()
+            )
+            if key not in local_programmes:
+                local_programmes[key] = p
 
     print(f"LOCAL CHANNELS: {len(local_channels)}")
     print(f"LOCAL PROGRAMMES: {len(local_programmes)}")
@@ -166,10 +153,10 @@ def main():
     # -------------------------
     local_root = etree.Element("tv")
 
-    for ch in local_channels:
+    for ch in local_channels.values():
         local_root.append(ch)
 
-    for p in local_programmes:
+    for p in local_programmes.values():
         local_root.append(p)
 
     local_data = etree.tostring(
@@ -185,7 +172,9 @@ def main():
     with gzip.open(LOCAL_XML_FILE + ".gz", "wb") as f:
         f.write(local_data)
 
-    print("DONE")
+    print("Saved local.xml")
+    print("Done")
+
 
 if __name__ == "__main__":
     main()
