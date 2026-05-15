@@ -1,136 +1,176 @@
-import requests
 import gzip
-import xml.etree.ElementTree as ET
+import os
 import re
+import requests
+import xml.etree.ElementTree as ET
+from collections import defaultdict
 
 # =========================
-# LOAD SOURCES (FROM TXT)
+# LOAD SOURCES (external file)
 # =========================
-def load_sources(file="epg_sources.txt"):
-    with open(file, "r", encoding="utf-8") as f:
-        return [
-            line.strip()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
+def load_sources(path="epg_sources.txt"):
+    sources = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            sources.append(line)
+    return sources
 
-SOURCES = load_sources()
-
-# =========================
-# LOAD MASTER CHANNELS
-# =========================
-def load_master(file="master_channels.txt"):
-    with open(file, "r", encoding="utf-8") as f:
-        return [
-            line.strip()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
-
-LOCAL_MASTER = load_master()
 
 # =========================
-# NORMALIZATION
+# LOAD MASTER CHANNEL LIST (STRICT LOCAL FILTER)
 # =========================
-def words(s):
-    return set(re.findall(r"[a-z0-9]+", s.lower()))
+def load_master(path="master_channels.txt"):
+    channels = []
+    for line in open(path, "r", encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        channels.append(line)
+    return channels
 
-LOCAL_WORDS = [(x, words(x)) for x in LOCAL_MASTER]
 
 # =========================
-# FETCH XML
+# NORMALIZATION (SAFE, NOT AGGRESSIVE)
 # =========================
-def fetch_xml(url):
+def norm(s):
+    s = s.lower()
+    s = re.sub(r"\(.*?\)", "", s)        # remove (HD), (US), etc
+    s = re.sub(r"[^a-z0-9]+", "", s)     # collapse symbols
+    return s.strip()
+
+
+# =========================
+# SMART MATCH (CONTROLLED FUZZY)
+# =========================
+def is_local_match(channel_name, master_set):
+    n = norm(channel_name)
+
+    # exact match
+    if n in master_set:
+        return True
+
+    # partial token match (SAFE)
+    # prevents "cozi tv extra asia india hd 4k" explosions
+    for m in master_set:
+        if m in n or n in m:
+            return True
+
+    return False
+
+
+# =========================
+# FETCH XML (gzip supported)
+# =========================
+def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
     r.raise_for_status()
 
     if url.endswith(".gz"):
-        return ET.fromstring(gzip.decompress(r.content))
-    return ET.fromstring(r.content)
+        import io
+        import gzip as gz
+        return gz.decompress(r.content)
+    return r.content
+
 
 # =========================
-# MATCHING (SAFE + FLEXIBLE)
+# PARSE XML
 # =========================
-def match_score(text):
-    ch_words = words(text)
-    score = 0
+def parse(xml_bytes):
+    return ET.fromstring(xml_bytes)
 
-    for _, lw in LOCAL_WORDS:
-        overlap = ch_words & lw
-
-        if len(overlap) >= 2:
-            score += 3
-        elif len(overlap) == 1:
-            score += 1
-
-    return score
-
-def is_local(text):
-    return match_score(text) >= 2
 
 # =========================
-# MERGE ALL DATA
+# WRITE OUTPUT (XML + GZ)
 # =========================
-all_channels = {}
-all_programmes = []
+def write_output(root, name):
+    tree = ET.ElementTree(root)
 
-for url in SOURCES:
-    root = fetch_xml(url)
+    xml_file = f"{name}.xml"
+    tree.write(xml_file, encoding="utf-8", xml_declaration=True)
 
-    for ch in root.findall("channel"):
-        cid = ch.attrib.get("id")
-        all_channels[cid] = ch
+    with open(xml_file, "rb") as f_in:
+        with gzip.open(f"{xml_file}.gz", "wb") as f_out:
+            f_out.write(f_in.read())
 
-    for p in root.findall("programme"):
-        all_programmes.append(p)
-
-print(f"Total channels: {len(all_channels)}")
-print(f"Total programmes: {len(all_programmes)}")
 
 # =========================
-# FILTER LOCAL
+# MAIN
 # =========================
-local_channels = {}
+def main():
+    sources = load_sources()
+    master = load_master()
 
-for ch in all_channels.values():
-    dn = ch.find("display-name")
-    name = dn.text if dn is not None else ""
-    cid = ch.attrib.get("id", "")
+    master_set = set(norm(x) for x in master)
 
-    if is_local(f"{name} {cid}"):
-        local_channels[cid] = ch
+    all_channels = {}
+    all_programmes = []
 
-local_ids = set(local_channels.keys())
+    local_channels = {}
+    local_programmes = []
 
-local_programmes = [
-    p for p in all_programmes
-    if p.attrib.get("channel") in local_ids
-]
+    # =========================
+    # PROCESS SOURCES
+    # =========================
+    for url in sources:
+        xml_bytes = fetch(url)
+        root = parse(xml_bytes)
 
-# =========================
-# DEBUG
-# =========================
-print("\n--- LOCAL DEBUG ---")
-print("LOCAL MASTER:", len(LOCAL_MASTER))
-print("LOCAL CHANNELS:", len(local_channels))
-print("LOCAL PROGRAMMES:", len(local_programmes))
+        for child in root:
+            if child.tag == "channel":
+                cid = child.attrib.get("id")
+                if cid and cid not in all_channels:
+                    all_channels[cid] = child
 
-# =========================
-# WRITE OUTPUT
-# =========================
-def write_xml(name, channels, programmes):
-    tv = ET.Element("tv")
+                    name = "".join(child.itertext())
 
-    for ch in channels.values():
-        tv.append(ch)
+                    if is_local_match(name, master_set):
+                        local_channels[cid] = child
 
-    for p in programmes:
-        tv.append(p)
+            elif child.tag == "programme":
+                cid = child.attrib.get("channel")
+                all_programmes.append(child)
 
-    ET.ElementTree(tv).write(name, encoding="utf-8", xml_declaration=True)
+                if cid in local_channels:
+                    local_programmes.append(child)
 
-write_xml("merged.xml", all_channels, all_programmes)
-write_xml("local.xml", local_channels, local_programmes)
+    # =========================
+    # BUILD MERGED XML
+    # =========================
+    merged = ET.Element("tv")
+    for c in all_channels.values():
+        merged.append(c)
+    for p in all_programmes:
+        merged.append(p)
 
-print("Done")
+    # =========================
+    # BUILD LOCAL XML
+    # =========================
+    local = ET.Element("tv")
+    for c in local_channels.values():
+        local.append(c)
+    for p in local_programmes:
+        local.append(p)
+
+    # =========================
+    # STATS
+    # =========================
+    print("\n--- STATS ---")
+    print("Merged channels:", len(all_channels))
+    print("Local channels:", len(local_channels))
+    print("Local programmes:", len(local_programmes))
+
+    # =========================
+    # OUTPUT
+    # =========================
+    write_output(merged, "merged")
+    write_output(local, "local")
+
+    print("Done")
+
+
+if __name__ == "__main__":
+    main()
