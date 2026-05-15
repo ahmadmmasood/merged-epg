@@ -1,44 +1,44 @@
 name: Update EPG
 
 on:
-  workflow_dispatch:   # allows manual trigger
+  workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # runs every 6 hours (UTC)
+    - cron: '0 */6 * * *'
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests lxml
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests lxml pytz
 
-    - name: Run EPG merge script
-      run: |
-        python merge_epg.py
+      - name: Run EPG merge script
+        run: |
+          python merge_epg.py
 
-    - name: Verify generated files
-      run: |
-        ls -lh local.xml local.xml.gz merged.xml merged.xml.gz
-        head -n 20 local.xml
+      - name: Verify generated files
+        run: |
+          ls -lh local.xml local.xml.gz merged.xml merged.xml.gz
+          head -n 20 local.xml
 
-    - name: Create or update latest release and upload files
-      uses: ncipollo/release-action@v1
-      with:
-        tag: latest
-        overwrite: true
-        files: |
-          local.xml
-          local.xml.gz
-          merged.xml
-          merged.xml.gz
+      - name: Create or update latest release and upload files
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest
+          overwrite: true
+          files: |
+            local.xml
+            local.xml.gz
+            merged.xml
+            merged.xml.gz
