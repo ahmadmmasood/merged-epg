@@ -36,8 +36,9 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           tag: latest
-          overwrite: true
-          files: |
+          allowUpdates: true
+          replacesArtifacts: true
+          artifacts: |
             local.xml
             local.xml.gz
             merged.xml
