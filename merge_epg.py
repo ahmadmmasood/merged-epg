@@ -3,27 +3,29 @@
 import gzip
 import requests
 from lxml import etree
-import re
+from collections import defaultdict
 
 EPG_SOURCES_FILE = "epg_sources.txt"
-MASTER_CHANNELS_FILE = "master_channels.txt"
-
 MERGED_XML_FILE = "merged.xml"
 LOCAL_XML_FILE = "local.xml"
 
 
 # -------------------------
+# NORMALIZE CHANNEL ID
+# -------------------------
+def norm_id(x):
+    return (x or "").lower().split(".")[0].split(" ")[0].strip()
+
+
+# -------------------------
 # FETCH XML
 # -------------------------
-
 def fetch_xml(url):
     print(f"Fetching {url}")
-
-    r = requests.get(url, timeout=60)
+    r = requests.get(url, timeout=90)
     r.raise_for_status()
 
     content = r.content
-
     if url.endswith(".gz"):
         content = gzip.decompress(content)
 
@@ -31,117 +33,38 @@ def fetch_xml(url):
 
 
 # -------------------------
-# NORMALIZE (FAST)
+# LOCAL WHITELIST (STRICT OTA ONLY)
 # -------------------------
+LOCAL_CHANNELS = {
+    "wrc-dt",
+    "wttg-dt",
+    "wjla-dt",
+    "wusa-dt",
+    "wdcw-dt",
+    "wdca-dt",
+    "wzdc-dt",
+    "wfdc-dt",
+    "whut-dt",
+    "weta-dt",
 
-def normalize(text):
-    if not text:
-        return ""
-    return re.sub(r"[^a-z0-9]", "", text.lower())
-
-
-# -------------------------
-# LOAD MASTER
-# -------------------------
-
-def load_master_keywords():
-    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-        return [
-            line.strip().lower()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
-
-
-# -------------------------
-# LOAD LOCAL LIST
-# -------------------------
-
-def load_local_list():
-    items = set()
-    capture = False
-
-    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if "LOCAL CHANNELS" in line:
-                capture = True
-                continue
-
-            if capture:
-                if line.startswith("#================"):
-                    continue
-                if line and not line.startswith("#"):
-                    items.add(line)
-
-    return items
+    "wbal-dt",
+    "wjz-dt",
+    "wmar-dt",
+    "wnuv-dt",
+    "wbff-dt",
+    "wutb-dt",
+    "wmpb-dt",
+    "wmpt-dt"
+}
 
 
-# -------------------------
-# MERGED FILTER
-# -------------------------
-
-def filter_merged_channels(channels, keywords):
-    keywords = set(keywords)
-
-    return [
-        ch for ch in channels
-        if any(k in ch.findtext("display-name", default="").lower() for k in keywords)
-    ]
-
-
-# -------------------------
-# FAST PROGRAMME FILTER (FIXED)
-# -------------------------
-
-def filter_programmes(programmes, allowed_ids):
-    """
-    KEY FIX:
-    - NO fuzzy matching
-    - NO 'any()'
-    - NO repeated normalization loops
-    - single-pass hash lookup
-    """
-
-    allowed = set(allowed_ids)
-
-    result = []
-
-    for p in programmes:
-        cid = normalize(p.get("channel", ""))
-
-        if cid in allowed:
-            result.append(p)
-
-    return result
-
-
-# -------------------------
-# SAVE XML
-# -------------------------
-
-def save_xml(root, filename):
-    data = etree.tostring(
-        root,
-        encoding="utf-8",
-        xml_declaration=True,
-        pretty_print=True
-    )
-
-    with open(filename, "wb") as f:
-        f.write(data)
-
-    with gzip.open(filename + ".gz", "wb") as f:
-        f.write(data)
-
-    print(f"Saved {filename}")
+def is_local(cid):
+    return norm_id(cid) in LOCAL_CHANNELS
 
 
 # -------------------------
 # MAIN
 # -------------------------
-
 def main():
 
     sources = [
@@ -153,65 +76,125 @@ def main():
     all_channels = []
     all_programmes = []
 
+    # -------------------------
+    # FETCH ALL SOURCES
+    # -------------------------
     for url in sources:
-        root = fetch_xml(url)
+        try:
+            root = fetch_xml(url)
 
-        all_channels.extend(root.findall("channel"))
-        all_programmes.extend(root.findall("programme"))
+            all_channels.extend(root.findall("channel"))
+            all_programmes.extend(root.findall("programme"))
+
+        except Exception as e:
+            print(f"Failed: {url} -> {e}")
 
     print(f"\nTotal channels: {len(all_channels)}")
     print(f"Total programmes: {len(all_programmes)}")
 
-    # ---------------- MERGED ----------------
-    master_keywords = load_master_keywords()
 
-    merged_channels = filter_merged_channels(all_channels, master_keywords)
+    # -------------------------
+    # DEDUP CHANNELS (MERGED FIX)
+    # -------------------------
+    seen = set()
+    unique_channels = []
 
-    merged_ids = [ch.get("id", "") for ch in merged_channels]
+    for c in all_channels:
+        cid = norm_id(c.get("id"))
 
-    merged_programmes = filter_programmes(all_programmes, merged_ids)
+        if cid in seen:
+            continue
 
+        seen.add(cid)
+        c.set("id", cid)
+        unique_channels.append(c)
+
+    all_channels = unique_channels
+
+
+    # -------------------------
+    # INDEX PROGRAMMES (FAST LOOKUP)
+    # -------------------------
+    program_index = defaultdict(list)
+
+    for p in all_programmes:
+        cid = norm_id(p.get("channel"))
+        program_index[cid].append(p)
+
+
+    # -------------------------
+    # BUILD MERGED XML
+    # -------------------------
     merged_root = etree.Element("tv")
 
-    for ch in merged_channels:
-        merged_root.append(ch)
+    for c in all_channels:
+        merged_root.append(c)
 
-    for p in merged_programmes:
-        merged_root.append(p)
+    for cid, progs in program_index.items():
+        for p in progs:
+            merged_root.append(p)
 
-    save_xml(merged_root, MERGED_XML_FILE)
+    merged_xml = etree.tostring(
+        merged_root,
+        encoding="utf-8",
+        xml_declaration=True,
+        pretty_print=True
+    )
 
-    # ---------------- LOCAL ----------------
-    local_raw = load_local_list()
+    with open(MERGED_XML_FILE, "wb") as f:
+        f.write(merged_xml)
 
-    local_allowed = set(normalize(x) for x in local_raw)
+    with gzip.open(MERGED_XML_FILE + ".gz", "wb") as f:
+        f.write(merged_xml)
 
-    print("\n--- LOCAL DEBUG ---")
-    print("LOCAL ITEMS:", len(local_allowed))
-    print("SAMPLE:", list(local_allowed)[:20])
+    print(f"Saved {MERGED_XML_FILE}")
 
+
+    # -------------------------
+    # LOCAL FILTER (STRICT)
+    # -------------------------
     local_channels = [
-        ch for ch in all_channels
-        if normalize(ch.get("id", "")) in local_allowed
-        or normalize(ch.findtext("display-name", "")) in local_allowed
+        c for c in all_channels
+        if is_local(c.get("id"))
     ]
 
-    local_programmes = filter_programmes(all_programmes, local_allowed)
+    local_ids = {c.get("id") for c in local_channels}
 
-    print("\nLOCAL CHANNELS FOUND:", len(local_channels))
+    local_programmes = [
+        p for p in all_programmes
+        if norm_id(p.get("channel")) in local_ids
+    ]
+
+    print("\n--- LOCAL DEBUG ---")
+    print("LOCAL CHANNELS FOUND:", len(local_channels))
     print("LOCAL PROGRAMMES FOUND:", len(local_programmes))
 
-    # ---------------- SAVE LOCAL ----------------
+
+    # -------------------------
+    # BUILD LOCAL XML
+    # -------------------------
     local_root = etree.Element("tv")
 
-    for ch in local_channels:
-        local_root.append(ch)
+    for c in local_channels:
+        local_root.append(c)
 
     for p in local_programmes:
         local_root.append(p)
 
-    save_xml(local_root, LOCAL_XML_FILE)
+    local_xml = etree.tostring(
+        local_root,
+        encoding="utf-8",
+        xml_declaration=True,
+        pretty_print=True
+    )
 
+    with open(LOCAL_XML_FILE, "wb") as f:
+        f.write(local_xml)
+
+    with gzip.open(LOCAL_XML_FILE + ".gz", "wb") as f:
+        f.write(local_xml)
+
+    print(f"Saved {LOCAL_XML_FILE}")
     print("\nDone.")
 
 
