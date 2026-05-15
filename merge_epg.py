@@ -30,6 +30,19 @@ def fetch_xml(url):
 
 
 # -------------------------
+# LOAD MASTER FILE
+# -------------------------
+
+def load_master_keywords():
+    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
+        return [
+            line.strip().lower()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+
+
+# -------------------------
 # LOAD LOCAL SECTION
 # -------------------------
 
@@ -55,33 +68,9 @@ def load_local_keywords():
     return keywords
 
 
-def is_local_channel(ch, keywords):
-    name = ch.findtext("display-name", default="").lower()
-    cid = ch.get("id", "").lower().split(".")[0]
-
-    for k in keywords:
-        if k in name or k in cid:
-            return True
-
-    return False
-
-
-def build_local_channels(all_channels, keywords):
-    return [ch for ch in all_channels if is_local_channel(ch, keywords)]
-
-
 # -------------------------
-# MERGED FILTER (unchanged idea)
+# MERGED FILTER
 # -------------------------
-
-def load_master_keywords():
-    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-        return [
-            line.strip().lower()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
-
 
 def filter_merged_channels(channels, keywords):
     keywords = set(keywords)
@@ -91,6 +80,34 @@ def filter_merged_channels(channels, keywords):
         if any(k in ch.findtext("display-name", default="").lower() for k in keywords)
     ]
 
+
+# -------------------------
+# LOCAL FILTER (SAFE MATCH)
+# -------------------------
+
+def is_local_channel(ch, keywords):
+    name = ch.findtext("display-name", default="").lower()
+    cid = ch.get("id", "").lower()
+
+    base_id = cid.split(".")[0]
+
+    for k in keywords:
+        if k in name or k in base_id:
+            return True
+
+    return False
+
+
+def build_local_channels(all_channels, keywords):
+    return [
+        ch for ch in all_channels
+        if is_local_channel(ch, keywords)
+    ]
+
+
+# -------------------------
+# PROGRAMME FILTER
+# -------------------------
 
 def filter_programmes(programmes, allowed_ids):
     allowed = set(allowed_ids)
@@ -168,7 +185,17 @@ def main():
     # ---------------- LOCAL ----------------
     local_keywords = load_local_keywords()
 
+    print("\n--- LOCAL DEBUG START ---")
+    print("LOCAL KEYWORDS COUNT:", len(local_keywords))
+    print("SAMPLE KEYWORDS:", list(local_keywords)[:20])
+
     local_channels = build_local_channels(all_channels, local_keywords)
+
+    print("\nLOCAL CHANNELS FOUND:", len(local_channels))
+
+    print("\nSAMPLE LOCAL CHANNELS:")
+    for ch in local_channels[:10]:
+        print(" -", ch.get("id"), "|", ch.findtext("display-name"))
 
     local_ids = [ch.get("id", "") for ch in local_channels]
 
@@ -177,24 +204,16 @@ def main():
         if p.get("channel", "").lower().split(".")[0] in local_ids
     ]
 
-    # ---------------- DEBUG ----------------
-    print("\n--- LOCAL DEBUG ---")
-    print(f"Local keywords loaded: {len(local_keywords)}")
-    print(f"Local channels matched: {len(local_channels)}")
-    print(f"Local programmes matched: {len(local_programmes)}")
-
-    print("\nFirst 10 local channels:")
-    for ch in local_channels[:10]:
-        print(" -", ch.get("id"), "|", ch.findtext("display-name"))
-
-    print("\nFirst 10 local programmes:")
-    for p in local_programmes[:10]:
-        print(" -", p.get("channel"), "|", p.findtext("title"))
+    print("\nLOCAL PROGRAMMES FOUND:", len(local_programmes))
 
     if len(local_channels) == 0:
-        print("\n❌ LOCAL CHANNELS = 0 → nothing will be written to local.xml")
+        print("\n❌ WARNING: LOCAL CHANNELS = 0 (nothing will appear in local.xml)")
 
-    # ---------------- WRITE LOCAL ----------------
+        print("\nCHECK FIRST FEW FEED CHANNEL IDs:")
+        for ch in all_channels[:20]:
+            print(" -", ch.get("id"), "|", ch.findtext("display-name"))
+
+    # ---------------- SAVE LOCAL ----------------
     local_root = etree.Element("tv")
 
     for ch in local_channels:
