@@ -11,9 +11,9 @@ MERGED_XML_FILE = "merged.xml"
 LOCAL_XML_FILE = "local.xml"
 
 
-# -----------------------------
+# -------------------------
 # FETCH XML
-# -----------------------------
+# -------------------------
 
 def fetch_xml(url):
     print(f"Fetching {url}")
@@ -29,25 +29,13 @@ def fetch_xml(url):
     return etree.fromstring(content)
 
 
-# -----------------------------
-# LOAD MASTER FILE
-# -----------------------------
+# -------------------------
+# LOAD LOCAL CHANNEL IDS ONLY
+# -------------------------
 
-def load_master_file():
-    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
-        return [
-            line.strip().lower()
-            for line in f
-            if line.strip() and not line.startswith("#")
-        ]
+def load_local_channel_ids():
+    ids = set()
 
-
-# -----------------------------
-# LOAD LOCAL SECTION ONLY
-# -----------------------------
-
-def load_local_channels():
-    allowed = set()
     capture = False
 
     with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
@@ -58,19 +46,28 @@ def load_local_channels():
                 capture = True
                 continue
 
-            if capture and line.startswith("#========================="):
-                continue
-
             if capture:
+                if line.startswith("#================"):
+                    continue
+
                 if line and not line.startswith("#"):
-                    allowed.add(line.lower())
+                    ids.add(line.strip().lower())
 
-    return allowed
+    return ids
 
 
-# -----------------------------
-# MERGED FILTER (BASIC)
-# -----------------------------
+# -------------------------
+# MERGED FILTER (light use only)
+# -------------------------
+
+def load_master_keywords():
+    with open(MASTER_CHANNELS_FILE, "r", encoding="utf-8") as f:
+        return [
+            line.strip().lower()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+
 
 def filter_merged_channels(channels, keywords):
     keywords = set(keywords)
@@ -86,40 +83,22 @@ def filter_merged_channels(channels, keywords):
     return result
 
 
-# -----------------------------
-# LOCAL FILTER (STRICT)
-# -----------------------------
-
-def filter_local_channels(channels, allowed_names):
-    allowed = set(allowed_names)
-
-    result = []
-
-    for ch in channels:
-        name = ch.findtext("display-name", default="").lower()
-
-        if name in allowed:
-            result.append(ch)
-
-    return result
-
-
-# -----------------------------
-# PROGRAMME FILTER
-# -----------------------------
+# -------------------------
+# PROGRAMME FILTER (ALWAYS BY ID)
+# -------------------------
 
 def filter_programmes(programmes, allowed_ids):
     allowed = set(allowed_ids)
 
     return [
         p for p in programmes
-        if p.get("channel", "") in allowed
+        if p.get("channel", "").lower().split(".")[0] in allowed
     ]
 
 
-# -----------------------------
+# -------------------------
 # SAVE XML
-# -----------------------------
+# -------------------------
 
 def save_xml(root, filename):
     data = etree.tostring(
@@ -138,9 +117,9 @@ def save_xml(root, filename):
     print(f"Saved {filename}")
 
 
-# -----------------------------
+# -------------------------
 # MAIN
-# -----------------------------
+# -------------------------
 
 def main():
 
@@ -162,11 +141,15 @@ def main():
     print(f"Total channels: {len(all_channels)}")
     print(f"Total programmes: {len(all_programmes)}")
 
-    # ---------------- MERGED OUTPUT ----------------
-    master = load_master_file()
+    # ---------------- MERGED ----------------
+    keywords = load_master_keywords()
 
-    merged_channels = filter_merged_channels(all_channels, master)
-    merged_ids = [ch.get("id") for ch in merged_channels]
+    merged_channels = filter_merged_channels(all_channels, keywords)
+
+    merged_ids = [
+        ch.get("id", "").lower().split(".")[0]
+        for ch in merged_channels
+    ]
 
     merged_programmes = filter_programmes(all_programmes, merged_ids)
 
@@ -180,11 +163,16 @@ def main():
 
     save_xml(merged_root, MERGED_XML_FILE)
 
-    # ---------------- LOCAL OUTPUT ----------------
-    local_allowed = load_local_channels()
+    # ---------------- LOCAL (FIXED) ----------------
+    local_ids = load_local_channel_ids()
 
-    local_channels = filter_local_channels(all_channels, local_allowed)
-    local_ids = [ch.get("id") for ch in local_channels]
+    print("LOCAL CHANNEL IDS:")
+    print(local_ids)
+
+    local_channels = [
+        ch for ch in all_channels
+        if ch.get("id", "").lower().split(".")[0] in local_ids
+    ]
 
     local_programmes = filter_programmes(all_programmes, local_ids)
 
