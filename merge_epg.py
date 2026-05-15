@@ -2,25 +2,43 @@ import requests
 import gzip
 import xml.etree.ElementTree as ET
 import re
-from epg_sources import SOURCES
-from pathlib import Path
 
 # =========================
-# LOAD MASTER LIST FROM FILE
+# LOAD SOURCES (FROM TXT)
 # =========================
-def load_master(file="local_master.txt"):
+def load_sources(file="epg_sources.txt"):
     with open(file, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+
+SOURCES = load_sources()
+
+# =========================
+# LOAD MASTER CHANNELS
+# =========================
+def load_master(file="master_channels.txt"):
+    with open(file, "r", encoding="utf-8") as f:
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
 
 LOCAL_MASTER = load_master()
 
+# =========================
+# NORMALIZATION
+# =========================
 def words(s):
     return set(re.findall(r"[a-z0-9]+", s.lower()))
 
 LOCAL_WORDS = [(x, words(x)) for x in LOCAL_MASTER]
 
 # =========================
-# FETCH
+# FETCH XML
 # =========================
 def fetch_xml(url):
     print(f"Fetching {url}")
@@ -32,7 +50,7 @@ def fetch_xml(url):
     return ET.fromstring(r.content)
 
 # =========================
-# MATCHING (SMART, NOT STRICT)
+# MATCHING (SAFE + FLEXIBLE)
 # =========================
 def match_score(text):
     ch_words = words(text)
@@ -40,6 +58,7 @@ def match_score(text):
 
     for _, lw in LOCAL_WORDS:
         overlap = ch_words & lw
+
         if len(overlap) >= 2:
             score += 3
         elif len(overlap) == 1:
@@ -51,7 +70,7 @@ def is_local(text):
     return match_score(text) >= 2
 
 # =========================
-# RUN MERGE
+# MERGE ALL DATA
 # =========================
 all_channels = {}
 all_programmes = []
@@ -90,7 +109,15 @@ local_programmes = [
 ]
 
 # =========================
-# OUTPUT
+# DEBUG
+# =========================
+print("\n--- LOCAL DEBUG ---")
+print("LOCAL MASTER:", len(LOCAL_MASTER))
+print("LOCAL CHANNELS:", len(local_channels))
+print("LOCAL PROGRAMMES:", len(local_programmes))
+
+# =========================
+# WRITE OUTPUT
 # =========================
 def write_xml(name, channels, programmes):
     tv = ET.Element("tv")
@@ -107,5 +134,3 @@ write_xml("merged.xml", all_channels, all_programmes)
 write_xml("local.xml", local_channels, local_programmes)
 
 print("Done")
-print("Merged:", len(all_channels))
-print("Local:", len(local_channels))
