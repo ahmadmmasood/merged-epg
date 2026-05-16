@@ -14,89 +14,69 @@ jobs:
 
     steps:
 
-      # =========================
-      # CHECKOUT
-      # =========================
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      # =========================
-      # PYTHON SETUP
-      # =========================
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      # =========================
-      # DEPENDENCIES
-      # =========================
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      # =========================
-      # RUN MERGE SCRIPT
-      # =========================
       - name: Run EPG merge
         run: |
           python merge_epg.py
 
       # =========================
-      # GENERATE DASHBOARD
+      # BUILD DASHBOARD (SAFE VERSION)
       # =========================
       - name: Generate index.html
         run: |
-          merged_xml_size=$(du -h merged.xml | cut -f1)
-          merged_gz_size=$(du -h merged.xml.gz | cut -f1)
-          local_xml_size=$(du -h local.xml | cut -f1)
-          local_gz_size=$(du -h local.xml.gz | cut -f1)
+          MERGED_XML_SIZE=$(du -h merged.xml | cut -f1)
+          MERGED_GZ_SIZE=$(du -h merged.xml.gz | cut -f1)
+          LOCAL_XML_SIZE=$(du -h local.xml | cut -f1)
+          LOCAL_GZ_SIZE=$(du -h local.xml.gz | cut -f1)
 
-          merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
-          local_channels=$(grep local_channels log.txt | awk '{print $2}')
-          merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
-          local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
+          MERGED_CHANNELS=$(grep merged_channels log.txt | awk '{print $2}')
+          LOCAL_CHANNELS=$(grep local_channels log.txt | awk '{print $2}')
+          MERGED_PROGS=$(grep merged_programmes log.txt | awk '{print $2}')
+          LOCAL_PROGS=$(grep local_programmes log.txt | awk '{print $2}')
 
-          cat > index.html << 'EOF'
-<html>
-<head>
-  <title>EPG Dashboard</title>
-</head>
-<body>
+          echo "<html>" > index.html
+          echo "<head><title>EPG Dashboard</title></head>" >> index.html
+          echo "<body>" >> index.html
 
-<h2>EPG Dashboard</h2>
+          echo "<h2>EPG Dashboard</h2>" >> index.html
 
-<h3>Downloads</h3>
-<ul>
-  <li><a href="https://github.com/ahmadmmasood/merged-epg/releases/download/latest/merged.xml.gz">Merged EPG</a></li>
-  <li><a href="https://github.com/ahmadmmasood/merged-epg/releases/download/latest/local.xml.gz">Local EPG</a></li>
-</ul>
+          echo "<h3>Downloads</h3>" >> index.html
+          echo "<ul>" >> index.html
+          echo "<li><a href='https://github.com/ahmadmmasood/merged-epg/releases/download/latest/merged.xml.gz'>Merged EPG</a></li>" >> index.html
+          echo "<li><a href='https://github.com/ahmadmmasood/merged-epg/releases/download/latest/local.xml.gz'>Local EPG</a></li>" >> index.html
+          echo "</ul>" >> index.html
 
-<h3>File Sizes</h3>
-<ul>
-  <li>Merged XML: ${merged_xml_size}</li>
-  <li>Merged GZ: ${merged_gz_size}</li>
-  <li>Local XML: ${local_xml_size}</li>
-  <li>Local GZ: ${local_gz_size}</li>
-</ul>
+          echo "<h3>File Sizes</h3>" >> index.html
+          echo "<ul>" >> index.html
+          echo "<li>Merged XML: $MERGED_XML_SIZE</li>" >> index.html
+          echo "<li>Merged GZ: $MERGED_GZ_SIZE</li>" >> index.html
+          echo "<li>Local XML: $LOCAL_XML_SIZE</li>" >> index.html
+          echo "<li>Local GZ: $LOCAL_GZ_SIZE</li>" >> index.html
+          echo "</ul>" >> index.html
 
-<h3>Build Stats</h3>
-<ul>
-  <li>Merged Channels: ${merged_channels}</li>
-  <li>Local Channels: ${local_channels}</li>
-  <li>Merged Programmes: ${merged_programmes}</li>
-  <li>Local Programmes: ${local_programmes}</li>
-</ul>
+          echo "<h3>Build Stats</h3>" >> index.html
+          echo "<ul>" >> index.html
+          echo "<li>Merged Channels: $MERGED_CHANNELS</li>" >> index.html
+          echo "<li>Local Channels: $LOCAL_CHANNELS</li>" >> index.html
+          echo "<li>Merged Programmes: $MERGED_PROGS</li>" >> index.html
+          echo "<li>Local Programmes: $LOCAL_PROGS</li>" >> index.html
+          echo "</ul>" >> index.html
 
-</body>
-</html>
-EOF
+          echo "</body></html>" >> index.html
 
-      # =========================
-      # COMMIT DASHBOARD ONLY
-      # =========================
-      - name: Commit index.html
+      - name: Commit dashboard
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
@@ -106,10 +86,7 @@ EOF
           git commit -m "Update dashboard" || echo "No changes"
           git push || echo "Push skipped"
 
-      # =========================
-      # RELEASE BUILD
-      # =========================
-      - name: Create or update latest release
+      - name: Create or update release
         uses: ncipollo/release-action@v1
         with:
           tag: latest
