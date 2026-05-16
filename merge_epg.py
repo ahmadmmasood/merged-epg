@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import json
 import zlib
+import os
 
 # =========================
 # CONFIG
@@ -54,7 +55,7 @@ def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
 # =========================
-# ARABIC FIX LAYER (unchanged)
+# ARABIC FIX LAYER
 # =========================
 def fix_arabic_channel_id(cid):
     if not cid:
@@ -112,7 +113,7 @@ def write_output(root, name):
         for c in list(root.findall("channel")):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
-        # Remove duplicate programmes safely (fast)
+        # Remove duplicates safely (fast)
         programmes = root.findall("programme")
         unique_programmes = remove_duplicate_programmes_fast(programmes)
         for p in programmes:
@@ -220,21 +221,35 @@ def main():
     merged_programmes_count = len(remove_duplicate_programmes_fast(merged_root.findall("programme")))
     local_programmes_count = len(local_root.findall("programme"))
 
+    # File sizes
+    merged_xml_size = os.path.getsize("merged.xml") if os.path.exists("merged.xml") else 0
+    merged_gz_size = os.path.getsize("merged.xml.gz") if os.path.exists("merged.xml.gz") else 0
+    local_xml_size = os.path.getsize("local.xml") if os.path.exists("local.xml") else 0
+    local_gz_size = os.path.getsize("local.xml.gz") if os.path.exists("local.xml.gz") else 0
+
     print("\n--- STATS ---")
     print("merged_channels", len(all_channels))
     print("local_channels", len(local_channels))
     print("merged_programmes", merged_programmes_count)
     print("local_programmes", local_programmes_count)
     print("days_kept", DAYS_TO_KEEP)
+    print("merged_xml_size", merged_xml_size)
+    print("merged_gz_size", merged_gz_size)
+    print("local_xml_size", local_xml_size)
+    print("local_gz_size", local_gz_size)
     print("Done")
 
-    # --- Write stats.json for dashboard ---
+    # Write stats.json for dashboard
     stats = {
         "merged_channels": len(all_channels),
         "local_channels": len(local_channels),
         "merged_programmes": merged_programmes_count,
         "local_programmes": local_programmes_count,
-        "days_kept": DAYS_TO_KEEP
+        "days_kept": DAYS_TO_KEEP,
+        "merged_xml_size": merged_xml_size,
+        "merged_gz_size": merged_gz_size,
+        "local_xml_size": local_xml_size,
+        "local_gz_size": local_gz_size
     }
 
     with open("stats.json", "w") as f:
