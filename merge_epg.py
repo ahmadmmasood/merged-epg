@@ -78,7 +78,7 @@ def write_output(root, name):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
 
-    # Strip extra whitespace in text/tail (optional, can keep as-is)
+    # Strip extra whitespace in text/tail (optional)
     for elem in root.iter():
         if elem.text:
             elem.text = elem.text.strip()
@@ -93,7 +93,7 @@ def write_output(root, name):
     # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Moderate gzip compression, now level 9
+    # Gzip compression, level 9
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
@@ -151,7 +151,7 @@ def main():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
         all_channels[cid] = best
 
-    # Determine local channels (original logic untouched)
+    # Determine local channels
     local_channels = {}
     local_channel_ids = set()
     for cid, ch in all_channels.items():
@@ -171,9 +171,17 @@ def main():
     local_programmes = []
 
     for cid, plist in programmes_by_channel.items():
-        merged_programmes.extend(plist)
+        # Fast duplicate removal based on (channel, start, stop)
+        seen = set()
+        unique = []
+        for p in plist:
+            key = (p.attrib.get("channel"), p.attrib.get("start"), p.attrib.get("stop"))
+            if key not in seen:
+                unique.append(p)
+                seen.add(key)
+        merged_programmes.extend(unique)
         if cid in local_channel_ids:
-            local_programmes.extend(plist)
+            local_programmes.extend(unique)
 
     # Build XML roots
     merged_root = ET.Element("tv")
