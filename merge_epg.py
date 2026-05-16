@@ -4,7 +4,7 @@ import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
-import os  # for file sizes
+import os
 
 DAYS_TO_KEEP = 3
 
@@ -55,6 +55,13 @@ def fetch(url):
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
+def remove_empty_elements(elem):
+    # recursively remove elements with no text and no children
+    for child in list(elem):
+        remove_empty_elements(child)
+        if (not child.text or not child.text.strip()) and len(child) == 0:
+            elem.remove(child)
+
 def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
@@ -74,13 +81,21 @@ def write_output(root, name):
         if elem.tail:
             elem.tail = elem.tail.strip()
 
+    # Remove empty elements to reduce size
+    remove_empty_elements(root)
+
     # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Fast gzip compression (compresslevel=1)
+    # Moderate gzip compression
     with open(xml_file, "rb") as f_in:
-        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=1) as f_out:
+        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=6) as f_out:
             f_out.write(f_in.read())
+
+    # Return file sizes
+    xml_size = os.path.getsize(xml_file)
+    gz_size = os.path.getsize(f"{xml_file}.gz")
+    return xml_size, gz_size
 
 def main():
     sources = load_sources()
@@ -138,8 +153,10 @@ def main():
             name_norm.endswith(" " + norm(m))
             for m in master_set
         ):
-            local_channels[cid] = ch
-            local_channel_ids.add(cid)
+            # exclude Arabic from local channels
+            if "arabica" not in cid.lower():
+                local_channels[cid] = ch
+                local_channel_ids.add(cid)
 
     merged_programmes = []
     local_programmes = []
@@ -162,33 +179,21 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
-    # Get file sizes
-    def get_size(path):
-        if os.path.exists(path):
-            size_bytes = os.path.getsize(path)
-            if size_bytes >= 1024**2:
-                return f"{size_bytes // (1024**2)}M"
-            elif size_bytes >= 1024:
-                return f"{size_bytes // 1024}K"
-            return f"{size_bytes}B"
-        return "0B"
+    # Write XML and gz, get sizes
+    merged_xml_size, merged_gz_size = write_output(merged_root, "merged")
+    local_xml_size, local_gz_size = write_output(local_root, "local")
 
-    # Write outputs
-    write_output(merged_root, "merged")
-    write_output(local_root, "local")
-
-    # Print stats including file sizes
     print("\n--- STATS ---")
     print("merged_channels", len(all_channels))
     print("local_channels", len(local_channels))
     print("merged_programmes", len(merged_programmes))
     print("local_programmes", len(local_programmes))
     print("days_kept", DAYS_TO_KEEP)
-    print("merged_xml_size", get_size("merged.xml"))
-    print("merged_gz_size", get_size("merged.xml.gz"))
-    print("local_xml_size", get_size("local.xml"))
-    print("local_gz_size", get_size("local.xml.gz"))
-    print("Done")
+    print(f"merged_xml_size {merged_xml_size // (1024*1024)}M")
+    print(f"merged_gz_size {merged_gz_size // (1024*1024)}M")
+    print(f"local_xml_size {local_xml_size // (1024*1024)}M")
+    print(f"local_gz_size {local_gz_size // (1024*1024)}M")
+    print("Done.")
 
 if __name__ == "__main__":
     main()
