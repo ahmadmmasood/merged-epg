@@ -4,6 +4,7 @@ import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
+import os  # for file sizes
 
 DAYS_TO_KEEP = 3
 
@@ -76,7 +77,7 @@ def write_output(root, name):
     # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Fast gzip compression (not max)
+    # Fast gzip compression (compresslevel=1)
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=1) as f_out:
             f_out.write(f_in.read())
@@ -161,15 +162,32 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
+    # Get file sizes
+    def get_size(path):
+        if os.path.exists(path):
+            size_bytes = os.path.getsize(path)
+            if size_bytes >= 1024**2:
+                return f"{size_bytes // (1024**2)}M"
+            elif size_bytes >= 1024:
+                return f"{size_bytes // 1024}K"
+            return f"{size_bytes}B"
+        return "0B"
+
+    # Write outputs
+    write_output(merged_root, "merged")
+    write_output(local_root, "local")
+
+    # Print stats including file sizes
     print("\n--- STATS ---")
     print("merged_channels", len(all_channels))
     print("local_channels", len(local_channels))
     print("merged_programmes", len(merged_programmes))
     print("local_programmes", len(local_programmes))
     print("days_kept", DAYS_TO_KEEP)
-
-    write_output(merged_root, "merged")
-    write_output(local_root, "local")
+    print("merged_xml_size", get_size("merged.xml"))
+    print("merged_gz_size", get_size("merged.xml.gz"))
+    print("local_xml_size", get_size("local.xml"))
+    print("local_gz_size", get_size("local.xml.gz"))
     print("Done")
 
 if __name__ == "__main__":
