@@ -3,6 +3,12 @@ import re
 import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from datetime import datetime, timedelta
+
+# =========================
+# CONFIG (CHANGE THIS ONLY)
+# =========================
+DAYS_TO_KEEP = 3  # 👈 change to 7, 5, 14 etc if needed
 
 # =========================
 # LOAD SOURCES
@@ -39,6 +45,14 @@ def norm(s):
     s = re.sub(r"[._\-]+", " ", s)
     s = re.sub(r"[^a-z0-9 ]+", "", s)
     return " ".join(s.split())
+
+
+# =========================
+# TIME PARSER
+# =========================
+def parse_time(s):
+    # XMLTV format: 20260116120000 +0000
+    return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
 
 # =========================
@@ -89,6 +103,9 @@ def main():
     channel_versions = defaultdict(list)
     programmes_by_channel = defaultdict(list)
 
+    now = datetime.utcnow()
+    cutoff = now + timedelta(days=DAYS_TO_KEEP)
+
     # =========================
     # PROCESS SOURCES
     # =========================
@@ -107,11 +124,23 @@ def main():
                     channel_versions[cid].append(child)
 
             # ---------------------
-            # PROGRAMMES
+            # PROGRAMMES (3-DAY FILTER APPLIED HERE)
             # ---------------------
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
-                if cid:
+                if not cid:
+                    continue
+
+                start = child.attrib.get("start")
+
+                if start:
+                    try:
+                        t = parse_time(start)
+                        if t <= cutoff:
+                            programmes_by_channel[cid].append(child)
+                    except:
+                        programmes_by_channel[cid].append(child)
+                else:
                     programmes_by_channel[cid].append(child)
 
     # =========================
@@ -124,23 +153,27 @@ def main():
         all_channels[cid] = best
 
     # =========================
-    # LOCAL CHANNEL MATCHING (FIXED)
+    # LOCAL MATCHING (STABLE VERSION)
     # =========================
     local_channels = {}
     local_channel_ids = set()
 
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
+        name_norm = norm(name)
 
-        nname = norm(name)
-
-        # FIX: fuzzy-safe match instead of strict equality
-        if any(norm(m) in nname or nname in norm(m) for m in master_set):
+        # stable safe match
+        if any(
+            name_norm == norm(m) or
+            name_norm.startswith(norm(m) + " ") or
+            name_norm.endswith(" " + norm(m))
+            for m in master_set
+        ):
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
     # =========================
-    # BUILD PROGRAMMES (SAFE, NO BREAKING CHANGES)
+    # BUILD PROGRAMMES
     # =========================
     merged_programmes = []
     local_programmes = []
@@ -177,6 +210,7 @@ def main():
     print("local_channels", len(local_channels))
     print("merged_programmes", len(merged_programmes))
     print("local_programmes", len(local_programmes))
+    print("days_kept", DAYS_TO_KEEP)
 
     # =========================
     # OUTPUT
