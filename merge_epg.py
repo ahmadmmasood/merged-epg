@@ -3,7 +3,6 @@ import re
 import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-import json
 
 # =========================
 # LOAD SOURCES
@@ -37,14 +36,9 @@ def load_master(path="master_channels.txt"):
 def norm(s):
     s = s.lower()
     s = re.sub(r"\(.*?\)", "", s)
-    s = re.sub(r"[._\-+/]+", " ", s)
-
-    junk = ["hd", "uhd", "4k", "east", "west", "us", "usa", "channel", "network", "feed"]
-
-    words = re.findall(r"[a-z0-9]+", s)
-    words = [w for w in words if w not in junk]
-
-    return " ".join(words)
+    s = re.sub(r"[._\-]+", " ", s)
+    s = re.sub(r"[^a-z0-9 ]+", "", s)
+    return " ".join(s.split())
 
 
 # =========================
@@ -74,10 +68,12 @@ def parse(xml_bytes):
 # =========================
 def write_output(root, name):
     tree = ET.ElementTree(root)
-    tree.write(f"{name}.xml", encoding="utf-8", xml_declaration=True)
+    xml_file = f"{name}.xml"
 
-    with open(f"{name}.xml", "rb") as f_in:
-        with gzip.open(f"{name}.xml.gz", "wb") as f_out:
+    tree.write(xml_file, encoding="utf-8", xml_declaration=True)
+
+    with open(xml_file, "rb") as f_in:
+        with gzip.open(f"{xml_file}.gz", "wb") as f_out:
             f_out.write(f_in.read())
 
 
@@ -89,10 +85,13 @@ def main():
     master = load_master()
     master_set = set(norm(x) for x in master)
 
+    # ALL channel versions (keep as-is)
     channel_versions = defaultdict(list)
-    channel_alias = {}
 
-    programmes = []
+    # ALL programmes grouped by channel id
+    programmes_by_channel = defaultdict(list)
+
+    all_programmes = []
 
     # =========================
     # PROCESS SOURCES
@@ -103,105 +102,95 @@ def main():
 
         for child in root:
 
+            # ---------------------
+            # CHANNELS
+            # ---------------------
             if child.tag == "channel":
                 cid = child.attrib.get("id")
-                if not cid:
-                    continue
+                if cid:
+                    channel_versions[cid].append(child)
 
-                channel_versions[cid].append(child)
-
-                for dn in child.findall("display-name"):
-                    if dn.text:
-                        channel_alias[norm(dn.text)] = cid
-
+            # ---------------------
+            # PROGRAMMES (IMPORTANT FIX)
+            # ---------------------
             elif child.tag == "programme":
-                programmes.append(child)
+                cid = child.attrib.get("channel")
+                if cid:
+                    programmes_by_channel[cid].append(child)
+                    all_programmes.append(child)
 
     # =========================
-    # BEST CHANNEL VERSION
+    # SELECT BEST CHANNEL VERSION (UNCHANGED LOGIC)
     # =========================
     all_channels = {}
 
     for cid, versions in channel_versions.items():
-        all_channels[cid] = max(versions, key=lambda c: len(c.findall("display-name")))
+        best = max(versions, key=lambda c: len(c.findall("display-name")))
+        all_channels[cid] = best
 
     # =========================
-    # LOCAL FILTER
+    # LOCAL CHANNEL FILTER
     # =========================
     local_channels = {}
     local_channel_ids = set()
 
     for cid, ch in all_channels.items():
-        for dn in ch.findall("display-name"):
-            if dn.text and norm(dn.text) in master_set:
-                local_channels[cid] = ch
-                local_channel_ids.add(cid)
-                break
+        name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
+
+        if norm(name) in master_set:
+            local_channels[cid] = ch
+            local_channel_ids.add(cid)
 
     # =========================
-    # PROGRAMMES
+    # BUILD OUTPUT PROGRAMMES (SAFE MERGE FIX)
     # =========================
-    all_programmes = []
+
+    merged_programmes = []
     local_programmes = []
 
-    for p in programmes:
-        raw = p.attrib.get("channel")
-        if not raw:
-            continue
+    for cid, plist in programmes_by_channel.items():
 
-        cid = channel_alias.get(norm(raw))
-        if not cid:
-            continue
+        # ALWAYS keep ALL programmes (no loss)
+        merged_programmes.extend(plist)
 
-        # rewrite channel ID (IMPORTANT FIX)
-        p.attrib["channel"] = cid
-
-        all_programmes.append(p)
-
+        # filter local only if channel is in master
         if cid in local_channel_ids:
-            local_programmes.append(p)
+            local_programmes.extend(plist)
 
     # =========================
-    # OUTPUT XML
+    # BUILD XML ROOTS
     # =========================
-    merged = ET.Element("tv")
+    merged_root = ET.Element("tv")
+    local_root = ET.Element("tv")
+
     for c in all_channels.values():
-        merged.append(c)
-    for p in all_programmes:
-        merged.append(p)
+        merged_root.append(c)
 
-    local = ET.Element("tv")
+    for p in merged_programmes:
+        merged_root.append(p)
+
     for c in local_channels.values():
-        local.append(c)
+        local_root.append(c)
+
     for p in local_programmes:
-        local.append(p)
+        local_root.append(p)
 
     # =========================
     # STATS
     # =========================
-    stats = {
-        "merged_channels": len(all_channels),
-        "local_channels": len(local_channels),
-        "merged_programmes": len(all_programmes),
-        "local_programmes": len(local_programmes),
-    }
-
-    with open("stats.json", "w") as f:
-        json.dump(stats, f, indent=2)
-
-    with open("log.txt", "w") as f:
-        for k, v in stats.items():
-            f.write(f"{k}: {v}\n")
-
     print("\n--- STATS ---")
-    for k, v in stats.items():
-        print(k, v)
+    print("merged_channels", len(all_channels))
+    print("local_channels", len(local_channels))
+    print("merged_programmes", len(merged_programmes))
+    print("local_programmes", len(local_programmes))
 
     # =========================
-    # WRITE OUTPUT
+    # OUTPUT
     # =========================
-    write_output(merged, "merged")
-    write_output(local, "local")
+    write_output(merged_root, "merged")
+    write_output(local_root, "local")
+
+    print("Done")
 
 
 if __name__ == "__main__":
