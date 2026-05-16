@@ -32,13 +32,10 @@ jobs:
 
       - name: Generate index.html
         run: |
-          # Get file sizes
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
-
-          # Extract stats from log
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
@@ -46,7 +43,7 @@ jobs:
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
           # Create HTML dashboard
-          cat > index.html <<EOF
+          cat <<EOF > index.html
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
@@ -68,7 +65,6 @@ jobs:
   <li>Local Programmes: ${local_programmes}</li>
   <li>Days Kept: ${days_kept}</li>
 </ul>
-
 </body>
 </html>
 EOF
