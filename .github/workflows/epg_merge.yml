@@ -27,15 +27,75 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      - name: Run EPG merge script
+      - name: Run EPG merge
         run: |
           python merge_epg.py
 
-      - name: Verify generated files
+      # =========================
+      # BUILD DASHBOARD
+      # =========================
+      - name: Generate index.html
         run: |
-          ls -lh *.xml *.gz
+          merged_xml_size=$(du -h merged.xml | cut -f1)
+          merged_gz_size=$(du -h merged.xml.gz | cut -f1)
+          local_xml_size=$(du -h local.xml | cut -f1)
+          local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-      - name: Create or update latest release
+          merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
+          local_channels=$(grep local_channels log.txt | awk '{print $2}')
+          merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
+          local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
+
+          cat > index.html << EOF
+<html>
+<head><title>EPG Dashboard</title></head>
+<body>
+
+<h2>EPG Dashboard</h2>
+
+<h3>Downloads</h3>
+<ul>
+  <li><a href="https://github.com/ahmadmmasood/merged-epg/releases/download/latest/merged.xml.gz">Merged EPG</a></li>
+  <li><a href="https://github.com/ahmadmmasood/merged-epg/releases/download/latest/local.xml.gz">Local EPG</a></li>
+</ul>
+
+<h3>File Sizes</h3>
+<ul>
+  <li>Merged XML: $merged_xml_size</li>
+  <li>Merged GZ: $merged_gz_size</li>
+  <li>Local XML: $local_xml_size</li>
+  <li>Local GZ: $local_gz_size</li>
+</ul>
+
+<h3>Build Stats</h3>
+<ul>
+  <li>Merged Channels: $merged_channels</li>
+  <li>Local Channels: $local_channels</li>
+  <li>Merged Programmes: $merged_programmes</li>
+  <li>Local Programmes: $local_programmes</li>
+</ul>
+
+</body>
+</html>
+EOF
+
+      # =========================
+      # COMMIT ONLY DASHBOARD
+      # =========================
+      - name: Commit index.html
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          git add index.html
+
+          git commit -m "Update dashboard" || echo "No changes"
+          git push || echo "Push skipped"
+
+      # =========================
+      # RELEASE
+      # =========================
+      - name: Create release
         uses: ncipollo/release-action@v1
         with:
           tag: latest
