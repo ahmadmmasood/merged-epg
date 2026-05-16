@@ -6,14 +6,8 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# =========================
-# CONFIG
-# =========================
 DAYS_TO_KEEP = 3
 
-# =========================
-# LOAD SOURCES
-# =========================
 def load_sources(path="epg_sources.txt"):
     sources = []
     with open(path, "r", encoding="utf-8") as f:
@@ -23,9 +17,6 @@ def load_sources(path="epg_sources.txt"):
                 sources.append(line)
     return sources
 
-# =========================
-# LOAD MASTER
-# =========================
 def load_master(path="master_channels.txt"):
     channels = []
     with open(path, "r", encoding="utf-8") as f:
@@ -35,9 +26,6 @@ def load_master(path="master_channels.txt"):
                 channels.append(line)
     return channels
 
-# =========================
-# NORMALIZE
-# =========================
 def norm(s):
     s = s.lower()
     s = re.sub(r"\(.*?\)", "", s)
@@ -45,15 +33,9 @@ def norm(s):
     s = re.sub(r"[^a-z0-9 ]+", "", s)
     return " ".join(s.split())
 
-# =========================
-# TIME PARSER
-# =========================
 def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
-# =========================
-# ARABIC FIX LAYER
-# =========================
 def fix_arabic_channel_id(cid):
     if not cid:
         return cid
@@ -61,9 +43,6 @@ def fix_arabic_channel_id(cid):
         return "network.arabica"
     return cid
 
-# =========================
-# FETCH
-# =========================
 def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
@@ -73,30 +52,32 @@ def fetch(url):
         return gzip.decompress(data)
     return data
 
-# =========================
-# PARSE
-# =========================
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
-# =========================
-# WRITE OUTPUT (MINIFIED)
-# =========================
 def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
 
-    # Write minified XML (no extra spaces or newlines)
+    if name == "merged":
+        programmes = [p for p in root.findall("programme")]
+        channels_with_programmes = set(p.attrib.get("channel") for p in programmes)
+        for c in list(root.findall("channel")):
+            if c.attrib.get("id") not in channels_with_programmes:
+                root.remove(c)
+
+    for elem in root.iter():
+        if elem.text:
+            elem.text = elem.text.strip()
+        if elem.tail:
+            elem.tail = elem.tail.strip()
+
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Compress
     with open(xml_file, "rb") as f_in:
-        with gzip.open(f"{xml_file}.gz", "wb") as f_out:
+        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
 
-# =========================
-# MAIN
-# =========================
 def main():
     sources = load_sources()
     master = load_master()
@@ -177,9 +158,6 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
-    # =========================
-    # STATS
-    # =========================
     print("\n--- STATS ---")
     print("merged_channels", len(all_channels))
     print("local_channels", len(local_channels))
