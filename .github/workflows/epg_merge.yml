@@ -13,7 +13,6 @@ jobs:
       contents: write
 
     steps:
-
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -29,64 +28,57 @@ jobs:
 
       - name: Run EPG merge
         run: |
-          python merge_epg.py
+          python merge_epg.py --days 3 > log.txt 2>&1
 
-      # =========================
-      # BUILD DASHBOARD (SAFE VERSION)
-      # =========================
       - name: Generate index.html
         run: |
-          MERGED_XML_SIZE=$(du -h merged.xml | cut -f1)
-          MERGED_GZ_SIZE=$(du -h merged.xml.gz | cut -f1)
-          LOCAL_XML_SIZE=$(du -h local.xml | cut -f1)
-          LOCAL_GZ_SIZE=$(du -h local.xml.gz | cut -f1)
+          # get file sizes
+          merged_xml_size=$(du -h merged.xml | cut -f1)
+          merged_gz_size=$(du -h merged.xml.gz | cut -f1)
+          local_xml_size=$(du -h local.xml | cut -f1)
+          local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-          MERGED_CHANNELS=$(grep merged_channels log.txt | awk '{print $2}')
-          LOCAL_CHANNELS=$(grep local_channels log.txt | awk '{print $2}')
-          MERGED_PROGS=$(grep merged_programmes log.txt | awk '{print $2}')
-          LOCAL_PROGS=$(grep local_programmes log.txt | awk '{print $2}')
+          # extract stats from log.txt
+          merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
+          local_channels=$(grep local_channels log.txt | awk '{print $2}')
+          merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
+          local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
+          days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          echo "<html>" > index.html
-          echo "<head><title>EPG Dashboard</title></head>" >> index.html
-          echo "<body>" >> index.html
+          cat > index.html << EOF
+<html>
+<head><title>EPG Dashboard</title></head>
+<body>
 
-          echo "<h2>EPG Dashboard</h2>" >> index.html
+<h2>EPG Dashboard</h2>
 
-          echo "<h3>Downloads</h3>" >> index.html
-          echo "<ul>" >> index.html
-          echo "<li><a href='https://github.com/ahmadmmasood/merged-epg/releases/download/latest/merged.xml.gz'>Merged EPG</a></li>" >> index.html
-          echo "<li><a href='https://github.com/ahmadmmasood/merged-epg/releases/download/latest/local.xml.gz'>Local EPG</a></li>" >> index.html
-          echo "</ul>" >> index.html
+<h3>Downloads</h3>
+<ul>
+  <li><a href="merged.xml">Merged EPG XML</a> (${merged_xml_size})</li>
+  <li><a href="merged.xml.gz">Merged EPG XML.GZ</a> (${merged_gz_size})</li>
+  <li><a href="local.xml">Local EPG XML</a> (${local_xml_size})</li>
+  <li><a href="local.xml.gz">Local EPG XML.GZ</a> (${local_gz_size})</li>
+</ul>
 
-          echo "<h3>File Sizes</h3>" >> index.html
-          echo "<ul>" >> index.html
-          echo "<li>Merged XML: $MERGED_XML_SIZE</li>" >> index.html
-          echo "<li>Merged GZ: $MERGED_GZ_SIZE</li>" >> index.html
-          echo "<li>Local XML: $LOCAL_XML_SIZE</li>" >> index.html
-          echo "<li>Local GZ: $LOCAL_GZ_SIZE</li>" >> index.html
-          echo "</ul>" >> index.html
+<h3>Build Stats</h3>
+<ul>
+  <li>Merged Channels: ${merged_channels}</li>
+  <li>Local Channels: ${local_channels}</li>
+  <li>Merged Programmes: ${merged_programmes}</li>
+  <li>Local Programmes: ${local_programmes}</li>
+  <li>Days Kept: ${days_kept}</li>
+</ul>
 
-          echo "<h3>Build Stats</h3>" >> index.html
-          echo "<ul>" >> index.html
-          echo "<li>Merged Channels: $MERGED_CHANNELS</li>" >> index.html
-          echo "<li>Local Channels: $LOCAL_CHANNELS</li>" >> index.html
-          echo "<li>Merged Programmes: $MERGED_PROGS</li>" >> index.html
-          echo "<li>Local Programmes: $LOCAL_PROGS</li>" >> index.html
-          echo "</ul>" >> index.html
+</body>
+</html>
+EOF
 
-          echo "</body></html>" >> index.html
-
-      - name: Commit dashboard
+      - name: Verify generated files
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          ls -lh local.xml local.xml.gz merged.xml merged.xml.gz index.html
+          head -n 20 index.html
 
-          git add index.html
-
-          git commit -m "Update dashboard" || echo "No changes"
-          git push || echo "Push skipped"
-
-      - name: Create or update release
+      - name: Create or update latest release and upload files
         uses: ncipollo/release-action@v1
         with:
           tag: latest
@@ -97,3 +89,4 @@ jobs:
             local.xml.gz
             merged.xml
             merged.xml.gz
+            index.html
