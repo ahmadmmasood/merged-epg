@@ -85,3 +85,10 @@ jobs:
             merged.xml.gz
             index.html
             log.txt
+
+      # === Step 7: Deploy to GitHub Pages (live dashboard) ===
+      - name: Deploy dashboard to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
