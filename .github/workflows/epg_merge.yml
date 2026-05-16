@@ -3,7 +3,7 @@ name: Update EPG
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *' # every 6 hours
 
 jobs:
   build-and-release:
@@ -13,40 +13,49 @@ jobs:
       contents: write
 
     steps:
+      # === Step 1: Checkout repo ===
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      # === Step 2: Setup Python ===
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
+      # === Step 3: Install dependencies ===
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
+      # === Step 4: Run merge_epg.py (keep your original behavior) ===
       - name: Run EPG merge
         run: |
-          python merge_epg.py --days 3 > log.txt 2>&1
+          python merge_epg.py > log.txt 2>&1
 
-      - name: Generate index.html
+      # === Step 5: Generate dashboard (keep your old index.html + add stats) ===
+      - name: Generate dashboard (index.html)
         run: |
+          # Get file sizes
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
+
+          # Extract stats from merge_epg.py log
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          # Create HTML dashboard
-          cat <<EOF > index.html
+          # Build index.html, preserving old layout + add stats
+          cat > index.html <<EOF
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
+
 <h2>EPG Dashboard</h2>
 
 <h3>Downloads</h3>
@@ -65,15 +74,12 @@ jobs:
   <li>Local Programmes: ${local_programmes}</li>
   <li>Days Kept: ${days_kept}</li>
 </ul>
+
 </body>
 </html>
 EOF
 
-      - name: Verify generated files
-        run: |
-          ls -lh local.xml local.xml.gz merged.xml merged.xml.gz index.html
-          head -n 20 index.html
-
+      # === Step 6: Release artifacts (keep all your old files) ===
       - name: Create or update latest release and upload files
         uses: ncipollo/release-action@v1
         with:
