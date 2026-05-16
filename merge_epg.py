@@ -5,9 +5,7 @@ import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
-import json
-import zlib
-import os
+import hashlib
 
 # =========================
 # CONFIG
@@ -55,12 +53,13 @@ def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
 # =========================
-# ARABIC FIX LAYER
+# ARABIC FIX
 # =========================
 def fix_arabic_channel_id(cid):
     if not cid:
         return cid
-    if "arabica" in cid.lower():
+    norm_cid = cid.strip().lower()
+    if "arabica" in norm_cid:
         return "network.arabica"
     return cid
 
@@ -83,55 +82,14 @@ def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
 # =========================
-# FAST DUPLICATE REMOVAL
-# =========================
-def remove_duplicate_programmes_fast(programmes):
-    seen = set()
-    unique_programmes = []
-    for p in programmes:
-        channel = p.attrib.get("channel")
-        start = p.attrib.get("start")
-        stop = p.attrib.get("stop")
-        title = p.findtext("title") or ""
-        key_bytes = f"{channel}|{start}|{stop}|{title}".encode("utf-8")
-        key_hash = zlib.crc32(key_bytes)
-        if key_hash not in seen:
-            seen.add(key_hash)
-            unique_programmes.append(p)
-    return unique_programmes
-
-# =========================
 # WRITE OUTPUT
 # =========================
 def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
-
-    if name == "merged":
-        programmes = root.findall("programme")
-        channels_with_programmes = set(p.attrib.get("channel") for p in programmes)
-        for c in list(root.findall("channel")):
-            if c.attrib.get("id") not in channels_with_programmes:
-                root.remove(c)
-        # Remove duplicates safely (fast)
-        programmes = root.findall("programme")
-        unique_programmes = remove_duplicate_programmes_fast(programmes)
-        for p in programmes:
-            root.remove(p)
-        for p in unique_programmes:
-            root.append(p)
-
-    # Strip whitespace
-    for elem in root.iter():
-        if elem.text:
-            elem.text = elem.text.strip()
-        if elem.tail:
-            elem.tail = elem.tail.strip()
-
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
-
     with open(xml_file, "rb") as f_in:
-        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
+        with gzip.open(f"{xml_file}.gz", "wb") as f_out:
             f_out.write(f_in.read())
 
 # =========================
@@ -196,67 +154,58 @@ def main():
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
-    merged_programmes = []
-    local_programmes = []
-
-    for cid, plist in programmes_by_channel.items():
-        merged_programmes.extend(plist)
-        if cid in local_channel_ids:
-            local_programmes.extend(plist)
-
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
-    for c in all_channels.values():
-        merged_root.append(c)
-    for p in merged_programmes:
-        merged_root.append(p)
+    # =========================
+    # HASH-BASED DEDUPLICATION
+    # =========================
+    def programme_hash(p):
+        parts = [
+            p.attrib.get("channel",""),
+            p.attrib.get("start",""),
+            p.attrib.get("stop",""),
+        ] + [t.text or "" for t in p.findall("title")]
+        return hashlib.md5("||".join(parts).encode("utf-8")).hexdigest()
 
-    for c in local_channels.values():
-        local_root.append(c)
-    for p in local_programmes:
-        local_root.append(p)
+    merged_hashes = set()
+    local_hashes = set()
 
-    # --- Stats AFTER duplicate removal ---
-    merged_programmes_count = len(remove_duplicate_programmes_fast(merged_root.findall("programme")))
+    for cid, ch in all_channels.items():
+        merged_root.append(ch)
+    for cid, plist in programmes_by_channel.items():
+        for p in plist:
+            h = programme_hash(p)
+            merged_programmes = merged_root.findall("programme")
+            local_programmes = local_root.findall("programme")
+            if h not in merged_hashes:
+                merged_root.append(p)
+                merged_hashes.add(h)
+            if cid in local_channel_ids and h not in local_hashes:
+                local_root.append(p)
+                local_hashes.add(h)
+
+    # =========================
+    # STATS
+    # =========================
+    merged_channels = len(all_channels)
+    local_channels_count = len(local_channels)
+    merged_programmes_count = len(merged_root.findall("programme"))
     local_programmes_count = len(local_root.findall("programme"))
 
-    # File sizes
-    merged_xml_size = os.path.getsize("merged.xml") if os.path.exists("merged.xml") else 0
-    merged_gz_size = os.path.getsize("merged.xml.gz") if os.path.exists("merged.xml.gz") else 0
-    local_xml_size = os.path.getsize("local.xml") if os.path.exists("local.xml") else 0
-    local_gz_size = os.path.getsize("local.xml.gz") if os.path.exists("local.xml.gz") else 0
-
     print("\n--- STATS ---")
-    print("merged_channels", len(all_channels))
-    print("local_channels", len(local_channels))
+    print("merged_channels", merged_channels)
+    print("local_channels", local_channels_count)
     print("merged_programmes", merged_programmes_count)
     print("local_programmes", local_programmes_count)
     print("days_kept", DAYS_TO_KEEP)
-    print("merged_xml_size", merged_xml_size)
-    print("merged_gz_size", merged_gz_size)
-    print("local_xml_size", local_xml_size)
-    print("local_gz_size", local_gz_size)
-    print("Done")
 
-    # Write stats.json for dashboard
-    stats = {
-        "merged_channels": len(all_channels),
-        "local_channels": len(local_channels),
-        "merged_programmes": merged_programmes_count,
-        "local_programmes": local_programmes_count,
-        "days_kept": DAYS_TO_KEEP,
-        "merged_xml_size": merged_xml_size,
-        "merged_gz_size": merged_gz_size,
-        "local_xml_size": local_xml_size,
-        "local_gz_size": local_gz_size
-    }
-
-    with open("stats.json", "w") as f:
-        json.dump(stats, f)
-
+    # =========================
+    # WRITE OUTPUT
+    # =========================
     write_output(merged_root, "merged")
     write_output(local_root, "local")
+    print("Done")
 
 if __name__ == "__main__":
     main()
