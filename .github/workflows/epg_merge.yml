@@ -1,22 +1,22 @@
 name: Update EPG
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # Manual trigger from Actions
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *'  # Scheduled every 6 hours
 
 jobs:
-  build-and-release:
+  merge-and-build:
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
@@ -33,21 +33,18 @@ jobs:
 
       - name: Generate index.html dashboard
         run: |
-          # Calculate file sizes
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-          # Extract stats from logs
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          # Create HTML dashboard
-          cat <<'EOF' > index.html
+          cat <<EOF > index.html
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
