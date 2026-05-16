@@ -39,11 +39,16 @@ jobs:
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
-          merged_channels=$(grep merged_channels log.txt | awk '{print $2}' || echo 0)
-          local_channels=$(grep local_channels log.txt | awk '{print $2}' || echo 0)
-          merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}' || echo 0)
-          local_programmes=$(grep local_programmes log.txt | awk '{print $2}' || echo 0)
-          days_kept=$(grep days_kept log.txt | awk '{print $2}' || echo 0)
+          merged_channels=$(grep '^merged_channels' log.txt | awk '{print $2}')
+          local_channels=$(grep '^local_channels' log.txt | awk '{print $2}')
+          merged_programmes=$(grep '^merged_programmes' log.txt | awk '{print $2}')
+          local_programmes=$(grep '^local_programmes' log.txt | awk '{print $2}')
+          days_kept=$(grep '^days_kept' log.txt | awk '{print $2}')
+          merged_channels=${merged_channels:-0}
+          local_channels=${local_channels:-0}
+          merged_programmes=${merged_programmes:-0}
+          local_programmes=${local_programmes:-0}
+          days_kept=${days_kept:-0}
           printf '<html>\n<head><title>EPG Dashboard</title></head>\n<body>\n' > index.html
           printf '<h2>EPG Dashboard</h2>\n' >> index.html
           printf '<h3>Downloads</h3>\n<ul>\n' >> index.html
