@@ -1,4 +1,4 @@
-name: Update EPG  # This is the workflow name you see in Actions
+name: Update EPG
 
 on:
   workflow_dispatch:  # allows manual run
@@ -29,62 +29,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      # === Step 4: Run merge_epg.py and capture logs ===
+      # === Step 4: Run merge_epg.py ===
       - name: Run EPG merge
         run: |
-          python -u merge_epg.py > log.txt 2>&1
+          python merge_epg.py > log.txt 2>&1
           cat log.txt
 
       # === Step 5: Generate dashboard (index.html) ===
       - name: Generate dashboard
         run: |
+          #!/bin/bash
           set -e
-          set -o pipefail
-
+          # Sizes of EPG files
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
-
+          # Extract stats from merge_epg log
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}' || echo 0)
           local_channels=$(grep local_channels log.txt | awk '{print $2}' || echo 0)
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}' || echo 0)
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}' || echo 0)
           days_kept=$(grep days_kept log.txt | awk '{print $2}' || echo 0)
+          # Build dashboard HTML
+          printf '<html>\n<head><title>EPG Dashboard</title></head>\n<body>\n' > index.html
+          printf '<h2>EPG Dashboard</h2>\n' >> index.html
+          printf '<h3>Downloads</h3>\n<ul>\n' >> index.html
+          printf '  <li><a href="merged.xml">Merged EPG XML</a> (%s)</li>\n' "$merged_xml_size" >> index.html
+          printf '  <li><a href="merged.xml.gz">Merged EPG XML.GZ</a> (%s)</li>\n' "$merged_gz_size" >> index.html
+          printf '  <li><a href="local.xml">Local EPG XML</a> (%s)</li>\n' "$local_xml_size" >> index.html
+          printf '  <li><a href="local.xml.gz">Local EPG XML.GZ</a> (%s)</li>\n' "$local_gz_size" >> index.html
+          printf '</ul>\n' >> index.html
+          printf '<h3>Build Stats</h3>\n<ul>\n' >> index.html
+          printf '  <li>Merged Channels: %s</li>\n' "$merged_channels" >> index.html
+          printf '  <li>Local Channels: %s</li>\n' "$local_channels" >> index.html
+          printf '  <li>Merged Programmes: %s</li>\n' "$merged_programmes" >> index.html
+          printf '  <li>Local Programmes: %s</li>\n' "$local_programmes" >> index.html
+          printf '  <li>Days Kept: %s</li>\n' "$days_kept" >> index.html
+          printf '</ul>\n' >> index.html
+          printf '<h3>Logs</h3>\n<pre>\n' >> index.html
+          cat log.txt >> index.html
+          printf '\n</pre>\n</body>\n</html>\n' >> index.html
 
-          cat > index.html <<EOF
-<html>
-<head><title>EPG Dashboard</title></head>
-<body>
-<h2>EPG Dashboard</h2>
-
-<h3>Downloads</h3>
-<ul>
-  <li><a href="merged.xml">Merged EPG XML</a> (${merged_xml_size})</li>
-  <li><a href="merged.xml.gz">Merged EPG XML.GZ</a> (${merged_gz_size})</li>
-  <li><a href="local.xml">Local EPG XML</a> (${local_xml_size})</li>
-  <li><a href="local.xml.gz">Local EPG XML.GZ</a> (${local_gz_size})</li>
-</ul>
-
-<h3>Build Stats</h3>
-<ul>
-  <li>Merged Channels: ${merged_channels}</li>
-  <li>Local Channels: ${local_channels}</li>
-  <li>Merged Programmes: ${merged_programmes}</li>
-  <li>Local Programmes: ${local_programmes}</li>
-  <li>Days Kept: ${days_kept}</li>
-</ul>
-
-<h3>Logs</h3>
-<pre>
-$(cat log.txt)
-</pre>
-
-</body>
-</html>
-EOF
-
-      # === Step 6: Create/update release and upload files ===
+      # === Step 6: Create or update latest release and upload files ===
       - name: Create or update latest release and upload files
         uses: ncipollo/release-action@v1
         with:
