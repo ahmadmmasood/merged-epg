@@ -248,6 +248,7 @@ Nile TV International
 Al Nahar TV
 CBC (Egypt)
 Dream TV
+Network Arabic
 
 # Indian Channels
 NDTV
