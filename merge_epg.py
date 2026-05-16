@@ -34,27 +34,25 @@ def load_master(path="master_channels.txt"):
 
 
 # =========================
-# NORMALIZATION
+# NORMALIZATION (FIXED)
 # =========================
 def norm(s):
     s = s.lower()
     s = re.sub(r"\(.*?\)", "", s)
-    s = re.sub(r"[^a-z0-9]+", "", s)
-    return s.strip()
+    s = re.sub(r"[._\-]+", " ", s)
+    s = re.sub(r"[^a-z0-9 ]+", "", s)
+    return " ".join(s.split())
 
 
 # =========================
-# MATCH
+# MATCH (MASTER-BASED ONLY)
 # =========================
 def is_local_match(channel_name, master_set):
-    n = norm(channel_name)
-    if n in master_set:
-        return True
-    return False
+    return norm(channel_name) in master_set
 
 
 # =========================
-# FETCH (FIXED)
+# FETCH (FIXED GZIP SAFE)
 # =========================
 def fetch(url):
     print(f"Fetching {url}")
@@ -63,7 +61,6 @@ def fetch(url):
 
     data = r.content
 
-    # FIX: proper gzip handling
     if url.endswith(".gz"):
         return gzip.decompress(data)
 
@@ -71,7 +68,7 @@ def fetch(url):
 
 
 # =========================
-# PARSE
+# PARSE XML
 # =========================
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
@@ -116,23 +113,26 @@ def main():
 
             if child.tag == "channel":
                 cid = child.attrib.get("id")
+
                 if cid and cid not in all_channels:
                     all_channels[cid] = child
 
-                    name = "".join(child.itertext())
+                    # FIX: correct itertext joining
+                    name = " ".join(t for t in child.itertext() if t and t.strip()).strip()
 
                     if is_local_match(name, master_set):
                         local_channels[cid] = child
 
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
+
                 all_programmes.append(child)
 
                 if cid in local_channels:
                     local_programmes.append(child)
 
     # =========================
-    # BUILD XML
+    # BUILD MERGED XML
     # =========================
     merged = ET.Element("tv")
     for c in all_channels.values():
@@ -140,6 +140,9 @@ def main():
     for p in all_programmes:
         merged.append(p)
 
+    # =========================
+    # BUILD LOCAL XML
+    # =========================
     local = ET.Element("tv")
     for c in local_channels.values():
         local.append(c)
