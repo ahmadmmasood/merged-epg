@@ -6,9 +6,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 # =========================
-# CONFIG (CHANGE THIS ONLY)
+# CONFIG
 # =========================
-DAYS_TO_KEEP = 3  # 👈 change to 7, 5, 14 etc if needed
+DAYS_TO_KEEP = 3
 
 # =========================
 # LOAD SOURCES
@@ -51,8 +51,27 @@ def norm(s):
 # TIME PARSER
 # =========================
 def parse_time(s):
-    # XMLTV format: 20260116120000 +0000
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
+
+
+# =========================
+# ARABIC FIX LAYER (PHASE 1 CORE)
+# =========================
+def fix_arabic_channel_id(cid):
+    """
+    Fix inconsistent IDs ONLY from ArabicEPG source.
+    Keeps other sources untouched.
+    """
+    if not cid:
+        return cid
+
+    c = cid.lower()
+
+    # Network Arabica + all variants
+    if "arabica" in c:
+        return "network.arabica"
+
+    return cid
 
 
 # =========================
@@ -110,8 +129,11 @@ def main():
     # PROCESS SOURCES
     # =========================
     for url in sources:
+
         xml_bytes = fetch(url)
         root = parse(xml_bytes)
+
+        is_arabic_feed = "ArabicEPG.xml" in url
 
         for child in root:
 
@@ -120,14 +142,22 @@ def main():
             # ---------------------
             if child.tag == "channel":
                 cid = child.attrib.get("id")
+
+                if is_arabic_feed:
+                    cid = fix_arabic_channel_id(cid)
+
                 if cid:
                     channel_versions[cid].append(child)
 
             # ---------------------
-            # PROGRAMMES (3-DAY FILTER APPLIED HERE)
+            # PROGRAMMES
             # ---------------------
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
+
+                if is_arabic_feed:
+                    cid = fix_arabic_channel_id(cid)
+
                 if not cid:
                     continue
 
@@ -153,7 +183,7 @@ def main():
         all_channels[cid] = best
 
     # =========================
-    # LOCAL MATCHING (STABLE VERSION)
+    # LOCAL MATCHING (UNCHANGED)
     # =========================
     local_channels = {}
     local_channel_ids = set()
@@ -162,7 +192,6 @@ def main():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
 
-        # stable safe match
         if any(
             name_norm == norm(m) or
             name_norm.startswith(norm(m) + " ") or
@@ -173,7 +202,7 @@ def main():
             local_channel_ids.add(cid)
 
     # =========================
-    # BUILD PROGRAMMES
+    # BUILD OUTPUT
     # =========================
     merged_programmes = []
     local_programmes = []
@@ -184,9 +213,6 @@ def main():
         if cid in local_channel_ids:
             local_programmes.extend(plist)
 
-    # =========================
-    # BUILD XML ROOTS
-    # =========================
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
