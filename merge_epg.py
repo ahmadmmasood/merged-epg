@@ -55,29 +55,51 @@ def fetch(url):
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
+def remove_duplicate_programmes(programmes):
+    seen = set()
+    unique_programmes = []
+    for p in programmes:
+        key = (
+            p.attrib.get("channel"),
+            p.attrib.get("start"),
+            p.attrib.get("stop"),
+            "".join(p.itertext()).strip()
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_programmes.append(p)
+    return unique_programmes
+
 def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
 
-    # Remove channels with no programmes for merged.xml
     if name == "merged":
+        # Remove channels with no programmes
         programmes = [p for p in root.findall("programme")]
         channels_with_programmes = set(p.attrib.get("channel") for p in programmes)
         for c in list(root.findall("channel")):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
+        # Remove duplicate programmes safely
+        programmes = root.findall("programme")
+        unique_programmes = remove_duplicate_programmes(programmes)
+        for p in programmes:
+            root.remove(p)
+        for p in unique_programmes:
+            root.append(p)
 
-    # Strip extra whitespace
+    # Strip whitespace
     for elem in root.iter():
         if elem.text:
             elem.text = elem.text.strip()
         if elem.tail:
             elem.tail = elem.tail.strip()
 
-    # Write minified XML
+    # Write XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Maximum gzip compression
+    # Compress with max gzip
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
@@ -162,11 +184,15 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
+    # --- Stats AFTER duplicate removal ---
+    merged_programmes_count = len(remove_duplicate_programmes(merged_root.findall("programme")))
+    local_programmes_count = len(local_root.findall("programme"))
+
     print("\n--- STATS ---")
     print("merged_channels", len(all_channels))
     print("local_channels", len(local_channels))
-    print("merged_programmes", len(merged_programmes))
-    print("local_programmes", len(local_programmes))
+    print("merged_programmes", merged_programmes_count)
+    print("local_programmes", local_programmes_count)
     print("days_kept", DAYS_TO_KEEP)
 
     write_output(merged_root, "merged")
