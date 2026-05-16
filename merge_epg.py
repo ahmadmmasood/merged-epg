@@ -48,6 +48,7 @@ def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
     r.raise_for_status()
+
     data = r.content
 
     if url.endswith(".gz"):
@@ -85,13 +86,8 @@ def main():
     master = load_master()
     master_set = set(norm(x) for x in master)
 
-    # ALL channel versions (keep as-is)
     channel_versions = defaultdict(list)
-
-    # ALL programmes grouped by channel id
     programmes_by_channel = defaultdict(list)
-
-    all_programmes = []
 
     # =========================
     # PROCESS SOURCES
@@ -111,16 +107,15 @@ def main():
                     channel_versions[cid].append(child)
 
             # ---------------------
-            # PROGRAMMES (IMPORTANT FIX)
+            # PROGRAMMES
             # ---------------------
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
                 if cid:
                     programmes_by_channel[cid].append(child)
-                    all_programmes.append(child)
 
     # =========================
-    # SELECT BEST CHANNEL VERSION (UNCHANGED LOGIC)
+    # SELECT BEST CHANNEL VERSION
     # =========================
     all_channels = {}
 
@@ -129,7 +124,7 @@ def main():
         all_channels[cid] = best
 
     # =========================
-    # LOCAL CHANNEL FILTER
+    # LOCAL CHANNEL MATCHING (FIXED)
     # =========================
     local_channels = {}
     local_channel_ids = set()
@@ -137,23 +132,22 @@ def main():
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
 
-        if norm(name) in master_set:
+        nname = norm(name)
+
+        # FIX: fuzzy-safe match instead of strict equality
+        if any(norm(m) in nname or nname in norm(m) for m in master_set):
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
     # =========================
-    # BUILD OUTPUT PROGRAMMES (SAFE MERGE FIX)
+    # BUILD PROGRAMMES (SAFE, NO BREAKING CHANGES)
     # =========================
-
     merged_programmes = []
     local_programmes = []
 
     for cid, plist in programmes_by_channel.items():
-
-        # ALWAYS keep ALL programmes (no loss)
         merged_programmes.extend(plist)
 
-        # filter local only if channel is in master
         if cid in local_channel_ids:
             local_programmes.extend(plist)
 
