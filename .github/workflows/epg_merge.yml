@@ -1,22 +1,21 @@
-name: Update EPG
+name: merge_epg.py
 
 on:
-  workflow_dispatch:   # Manual trigger from Actions
+  workflow_dispatch:      # Manual trigger
   schedule:
-    - cron: '0 */6 * * *'  # Scheduled every 6 hours
+    - cron: '0 */6 * * *'  # Runs every 6 hours
 
 jobs:
-  merge-and-build:
+  build-and-release:
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
