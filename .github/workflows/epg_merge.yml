@@ -1,9 +1,9 @@
-name: merge_epg.py
+name: Update EPG
 
 on:
-  workflow_dispatch:      # Allows manual triggering
+  workflow_dispatch:  # allows manual run
   schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours
+    - cron: '0 */6 * * *'  # every 6 hours
 
 jobs:
   build-and-release:
@@ -12,7 +12,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -25,12 +25,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      - name: Run merge_epg.py and capture logs
+      - name: Run EPG merge and capture logs
         run: |
           python merge_epg.py > log.txt 2>&1
           cat log.txt
 
-      - name: Generate index.html dashboard
+      - name: Generate index.html
         run: |
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
@@ -43,7 +43,7 @@ jobs:
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          cat <<EOF > index.html
+          cat > index.html <<EOF
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
@@ -82,9 +82,9 @@ EOF
           allowUpdates: true
           replacesArtifacts: true
           artifacts: |
-            merged.xml
-            merged.xml.gz
             local.xml
             local.xml.gz
+            merged.xml
+            merged.xml.gz
             index.html
             log.txt
