@@ -13,61 +13,28 @@ jobs:
       contents: write
 
     steps:
-      # =========================
-      # CHECKOUT
-      # =========================
+
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      # =========================
-      # PYTHON
-      # =========================
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      # =========================
-      # INSTALL DEPENDENCIES
-      # =========================
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      # =========================
-      # RUN MERGE
-      # =========================
       - name: Run EPG merge script
         run: |
           python merge_epg.py
 
-      # =========================
-      # VERIFY OUTPUT
-      # =========================
       - name: Verify generated files
         run: |
-          ls -lh local.xml local.xml.gz merged.xml merged.xml.gz
-          head -n 20 local.xml
+          ls -lh *.xml *.gz
 
-      # =========================
-      # COMMIT UPDATED FILES
-      # (updates GitHub Pages)
-      # =========================
-      - name: Commit updated EPG files
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
-          git add merged.xml merged.xml.gz local.xml local.xml.gz
-
-          git commit -m "Auto-update EPG" || echo "No changes to commit"
-
-          git push
-
-      # =========================
-      # UPDATE RELEASE ASSETS
-      # =========================
       - name: Create or update latest release
         uses: ncipollo/release-action@v1
         with:
