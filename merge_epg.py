@@ -44,7 +44,7 @@ def fix_arabic_channel_id(cid):
     return cid
 
 def fetch(url):
-    print(f"Fetching {url}")
+    print(f"Fetching {url}", flush=True)
     r = requests.get(url, timeout=60)
     r.raise_for_status()
     data = r.content
@@ -146,16 +146,16 @@ def main():
     # =========================
     # STATS
     # =========================
-    print("\n--- STATS ---")
-    print("merged_channels", len(all_channels))
-    print("local_channels", len(local_channels))
-    print("merged_programmes", len(merged_programmes))
-    print("local_programmes", len(local_programmes))
-    print("days_kept", DAYS_TO_KEEP)
+    print("\n--- STATS ---", flush=True)
+    print("merged_channels", len(all_channels), flush=True)
+    print("local_channels", len(local_channels), flush=True)
+    print("merged_programmes", len(merged_programmes), flush=True)
+    print("local_programmes", len(local_programmes), flush=True)
+    print("days_kept", DAYS_TO_KEEP, flush=True)
 
     write_output(merged_root, "merged")
     write_output(local_root, "local")
-    print("Done")
+    print("Done", flush=True)
 
 if __name__ == "__main__":
     main()
