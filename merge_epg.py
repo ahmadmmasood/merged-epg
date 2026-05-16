@@ -6,8 +6,14 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import os
 
+#=========================
+# CONFIG
+#=========================
 DAYS_TO_KEEP = 3
 
+#=========================
+# HELPERS
+#=========================
 def load_sources(path="epg_sources.txt"):
     sources = []
     with open(path, "r", encoding="utf-8") as f:
@@ -36,13 +42,6 @@ def norm(s):
 def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
-def fix_arabic_channel_id(cid):
-    if not cid:
-        return cid
-    if "arabica" in cid.lower():
-        return "network.arabica"
-    return cid
-
 def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
@@ -61,6 +60,12 @@ def remove_empty_elements(elem):
         remove_empty_elements(child)
         if (not child.text or not child.text.strip()) and len(child) == 0:
             elem.remove(child)
+
+def remove_empty_attributes(elem):
+    # remove attributes that are empty
+    for attr in list(elem.attrib):
+        if not elem.attrib[attr].strip():
+            del elem.attrib[attr]
 
 def write_output(root, name):
     tree = ET.ElementTree(root)
@@ -81,8 +86,10 @@ def write_output(root, name):
         if elem.tail:
             elem.tail = elem.tail.strip()
 
-    # Remove empty elements to reduce size
+    # Remove empty elements and attributes
     remove_empty_elements(root)
+    for elem in root.iter():
+        remove_empty_attributes(elem)
 
     # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
@@ -97,6 +104,9 @@ def write_output(root, name):
     gz_size = os.path.getsize(f"{xml_file}.gz")
     return xml_size, gz_size
 
+#=========================
+# MAIN
+#=========================
 def main():
     sources = load_sources()
     master = load_master()
@@ -111,19 +121,14 @@ def main():
     for url in sources:
         xml_bytes = fetch(url)
         root = parse(xml_bytes)
-        is_arabic_feed = "ArabicEPG.xml" in url
 
         for child in root:
             if child.tag == "channel":
                 cid = child.attrib.get("id")
-                if is_arabic_feed:
-                    cid = fix_arabic_channel_id(cid)
                 if cid:
                     channel_versions[cid].append(child)
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
-                if is_arabic_feed:
-                    cid = fix_arabic_channel_id(cid)
                 if not cid:
                     continue
                 start = child.attrib.get("start")
@@ -137,27 +142,23 @@ def main():
                 else:
                     programmes_by_channel[cid].append(child)
 
+    # Pick the best channel version
     all_channels = {}
     for cid, versions in channel_versions.items():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
         all_channels[cid] = best
 
+    # Determine local channels
     local_channels = {}
     local_channel_ids = set()
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
-        if any(
-            name_norm == norm(m) or
-            name_norm.startswith(norm(m) + " ") or
-            name_norm.endswith(" " + norm(m))
-            for m in master_set
-        ):
-            # exclude Arabic from local channels
-            if "arabica" not in cid.lower():
-                local_channels[cid] = ch
-                local_channel_ids.add(cid)
+        if name_norm in master_set:
+            local_channels[cid] = ch
+            local_channel_ids.add(cid)
 
+    # Split programmes
     merged_programmes = []
     local_programmes = []
 
@@ -166,6 +167,7 @@ def main():
         if cid in local_channel_ids:
             local_programmes.extend(plist)
 
+    # Build XML roots
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
@@ -179,7 +181,7 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
-    # Write XML and gz, get sizes
+    # Write output
     merged_xml_size, merged_gz_size = write_output(merged_root, "merged")
     local_xml_size, local_gz_size = write_output(local_root, "local")
 
@@ -195,5 +197,8 @@ def main():
     print(f"local_gz_size {local_gz_size // (1024*1024)}M")
     print("Done.")
 
+#=========================
+# ENTRY POINT
+#=========================
 if __name__ == "__main__":
     main()
