@@ -62,7 +62,6 @@ def remove_empty_elements(elem):
             elem.remove(child)
 
 def remove_empty_attributes(elem):
-    # remove attributes that are empty
     for attr in list(elem.attrib):
         if not elem.attrib[attr].strip():
             del elem.attrib[attr]
@@ -99,7 +98,6 @@ def write_output(root, name):
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=6) as f_out:
             f_out.write(f_in.read())
 
-    # Return file sizes
     xml_size = os.path.getsize(xml_file)
     gz_size = os.path.getsize(f"{xml_file}.gz")
     return xml_size, gz_size
@@ -119,6 +117,11 @@ def main():
     cutoff = now + timedelta(days=DAYS_TO_KEEP)
 
     for url in sources:
+        # Skip Arabica feed entirely
+        if "ArabicEPG.xml" in url:
+            print(f"Skipping Arabica feed: {url}")
+            continue
+
         xml_bytes = fetch(url)
         root = parse(xml_bytes)
 
@@ -154,7 +157,13 @@ def main():
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
-        if name_norm in master_set:
+        # original local logic unchanged
+        if any(
+            name_norm == norm(m) or
+            name_norm.startswith(norm(m) + " ") or
+            name_norm.endswith(" " + norm(m))
+            for m in master_set
+        ):
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
