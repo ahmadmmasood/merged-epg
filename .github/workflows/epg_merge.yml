@@ -14,25 +14,37 @@ jobs:
 
     steps:
 
+      # =========================
+      # CHECKOUT
+      # =========================
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      # =========================
+      # PYTHON SETUP
+      # =========================
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
+      # =========================
+      # DEPENDENCIES
+      # =========================
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
+      # =========================
+      # RUN MERGE SCRIPT
+      # =========================
       - name: Run EPG merge
         run: |
           python merge_epg.py
 
       # =========================
-      # BUILD DASHBOARD
+      # GENERATE DASHBOARD
       # =========================
       - name: Generate index.html
         run: |
@@ -46,9 +58,11 @@ jobs:
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
 
-          cat > index.html << EOF
+          cat > index.html << 'EOF'
 <html>
-<head><title>EPG Dashboard</title></head>
+<head>
+  <title>EPG Dashboard</title>
+</head>
 <body>
 
 <h2>EPG Dashboard</h2>
@@ -61,18 +75,18 @@ jobs:
 
 <h3>File Sizes</h3>
 <ul>
-  <li>Merged XML: $merged_xml_size</li>
-  <li>Merged GZ: $merged_gz_size</li>
-  <li>Local XML: $local_xml_size</li>
-  <li>Local GZ: $local_gz_size</li>
+  <li>Merged XML: ${merged_xml_size}</li>
+  <li>Merged GZ: ${merged_gz_size}</li>
+  <li>Local XML: ${local_xml_size}</li>
+  <li>Local GZ: ${local_gz_size}</li>
 </ul>
 
 <h3>Build Stats</h3>
 <ul>
-  <li>Merged Channels: $merged_channels</li>
-  <li>Local Channels: $local_channels</li>
-  <li>Merged Programmes: $merged_programmes</li>
-  <li>Local Programmes: $local_programmes</li>
+  <li>Merged Channels: ${merged_channels}</li>
+  <li>Local Channels: ${local_channels}</li>
+  <li>Merged Programmes: ${merged_programmes}</li>
+  <li>Local Programmes: ${local_programmes}</li>
 </ul>
 
 </body>
@@ -80,7 +94,7 @@ jobs:
 EOF
 
       # =========================
-      # COMMIT ONLY DASHBOARD
+      # COMMIT DASHBOARD ONLY
       # =========================
       - name: Commit index.html
         run: |
@@ -93,9 +107,9 @@ EOF
           git push || echo "Push skipped"
 
       # =========================
-      # RELEASE
+      # RELEASE BUILD
       # =========================
-      - name: Create release
+      - name: Create or update latest release
         uses: ncipollo/release-action@v1
         with:
           tag: latest
