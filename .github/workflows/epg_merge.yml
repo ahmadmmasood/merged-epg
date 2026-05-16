@@ -50,7 +50,7 @@ jobs:
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
           # Create HTML dashboard
-          cat > index.html <<EOF
+          cat <<'EOF' > index.html
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
