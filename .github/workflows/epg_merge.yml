@@ -32,24 +32,24 @@ jobs:
 
       - name: Generate index.html
         run: |
-          # get file sizes
+          # Get file sizes
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-          # extract stats from log.txt
+          # Extract stats from log
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          cat > index.html << EOF
+          # Create HTML dashboard
+          cat > index.html <<EOF
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
-
 <h2>EPG Dashboard</h2>
 
 <h3>Downloads</h3>
