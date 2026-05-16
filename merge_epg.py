@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import gzip
 import re
 import requests
@@ -5,14 +6,8 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# =========================
-# CONFIG
-# =========================
 DAYS_TO_KEEP = 3
 
-# =========================
-# LOAD SOURCES
-# =========================
 def load_sources(path="epg_sources.txt"):
     sources = []
     with open(path, "r", encoding="utf-8") as f:
@@ -22,10 +17,6 @@ def load_sources(path="epg_sources.txt"):
                 sources.append(line)
     return sources
 
-
-# =========================
-# LOAD MASTER
-# =========================
 def load_master(path="master_channels.txt"):
     channels = []
     with open(path, "r", encoding="utf-8") as f:
@@ -35,10 +26,6 @@ def load_master(path="master_channels.txt"):
                 channels.append(line)
     return channels
 
-
-# =========================
-# NORMALIZE
-# =========================
 def norm(s):
     s = s.lower()
     s = re.sub(r"\(.*?\)", "", s)
@@ -46,74 +33,36 @@ def norm(s):
     s = re.sub(r"[^a-z0-9 ]+", "", s)
     return " ".join(s.split())
 
-
-# =========================
-# TIME PARSER
-# =========================
 def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
-
-# =========================
-# ARABIC FIX LAYER (PHASE 1 CORE)
-# =========================
 def fix_arabic_channel_id(cid):
-    """
-    Fix inconsistent IDs ONLY from ArabicEPG source.
-    Keeps other sources untouched.
-    """
     if not cid:
         return cid
-
-    c = cid.lower()
-
-    # Network Arabica + all variants
-    if "arabica" in c:
+    if "arabica" in cid.lower():
         return "network.arabica"
-
     return cid
 
-
-# =========================
-# FETCH
-# =========================
 def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
     r.raise_for_status()
-
     data = r.content
-
     if url.endswith(".gz"):
         return gzip.decompress(data)
-
     return data
 
-
-# =========================
-# PARSE
-# =========================
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
-
-# =========================
-# WRITE OUTPUT
-# =========================
 def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
-
     tree.write(xml_file, encoding="utf-8", xml_declaration=True)
-
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb") as f_out:
             f_out.write(f_in.read())
 
-
-# =========================
-# MAIN
-# =========================
 def main():
     sources = load_sources()
     master = load_master()
@@ -125,44 +74,25 @@ def main():
     now = datetime.utcnow()
     cutoff = now + timedelta(days=DAYS_TO_KEEP)
 
-    # =========================
-    # PROCESS SOURCES
-    # =========================
     for url in sources:
-
         xml_bytes = fetch(url)
         root = parse(xml_bytes)
-
         is_arabic_feed = "ArabicEPG.xml" in url
 
         for child in root:
-
-            # ---------------------
-            # CHANNELS
-            # ---------------------
             if child.tag == "channel":
                 cid = child.attrib.get("id")
-
                 if is_arabic_feed:
                     cid = fix_arabic_channel_id(cid)
-
                 if cid:
                     channel_versions[cid].append(child)
-
-            # ---------------------
-            # PROGRAMMES
-            # ---------------------
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
-
                 if is_arabic_feed:
                     cid = fix_arabic_channel_id(cid)
-
                 if not cid:
                     continue
-
                 start = child.attrib.get("start")
-
                 if start:
                     try:
                         t = parse_time(start)
@@ -173,25 +103,16 @@ def main():
                 else:
                     programmes_by_channel[cid].append(child)
 
-    # =========================
-    # SELECT BEST CHANNEL VERSION
-    # =========================
     all_channels = {}
-
     for cid, versions in channel_versions.items():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
         all_channels[cid] = best
 
-    # =========================
-    # LOCAL MATCHING (UNCHANGED)
-    # =========================
     local_channels = {}
     local_channel_ids = set()
-
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
-
         if any(
             name_norm == norm(m) or
             name_norm.startswith(norm(m) + " ") or
@@ -201,15 +122,11 @@ def main():
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
-    # =========================
-    # BUILD OUTPUT
-    # =========================
     merged_programmes = []
     local_programmes = []
 
     for cid, plist in programmes_by_channel.items():
         merged_programmes.extend(plist)
-
         if cid in local_channel_ids:
             local_programmes.extend(plist)
 
@@ -218,13 +135,11 @@ def main():
 
     for c in all_channels.values():
         merged_root.append(c)
-
     for p in merged_programmes:
         merged_root.append(p)
 
     for c in local_channels.values():
         local_root.append(c)
-
     for p in local_programmes:
         local_root.append(p)
 
@@ -238,14 +153,9 @@ def main():
     print("local_programmes", len(local_programmes))
     print("days_kept", DAYS_TO_KEEP)
 
-    # =========================
-    # OUTPUT
-    # =========================
     write_output(merged_root, "merged")
     write_output(local_root, "local")
-
     print("Done")
-
 
 if __name__ == "__main__":
     main()
