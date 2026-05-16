@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests lxml pytz
+          pip install requests lxml pytz jq
 
       - name: Run EPG merge
         run: |
@@ -35,38 +35,57 @@ jobs:
         run: |
           #!/bin/bash
           set -e
-          merged_xml_size=$(du -h merged.xml | cut -f1)
-          merged_gz_size=$(du -h merged.xml.gz | cut -f1)
-          local_xml_size=$(du -h local.xml | cut -f1)
-          local_gz_size=$(du -h local.xml.gz | cut -f1)
-          merged_channels=$(grep '^merged_channels' log.txt | awk '{print $2}')
-          local_channels=$(grep '^local_channels' log.txt | awk '{print $2}')
-          merged_programmes=$(grep '^merged_programmes' log.txt | awk '{print $2}')
-          local_programmes=$(grep '^local_programmes' log.txt | awk '{print $2}')
-          days_kept=$(grep '^days_kept' log.txt | awk '{print $2}')
-          merged_channels=${merged_channels:-0}
-          local_channels=${local_channels:-0}
-          merged_programmes=${merged_programmes:-0}
-          local_programmes=${local_programmes:-0}
-          days_kept=${days_kept:-0}
-          printf '<html>\n<head><title>EPG Dashboard</title></head>\n<body>\n' > index.html
-          printf '<h2>EPG Dashboard</h2>\n' >> index.html
-          printf '<h3>Downloads</h3>\n<ul>\n' >> index.html
-          printf '  <li><a href="merged.xml">Merged EPG XML</a> (%s)</li>\n' "$merged_xml_size" >> index.html
-          printf '  <li><a href="merged.xml.gz">Merged EPG XML.GZ</a> (%s)</li>\n' "$merged_gz_size" >> index.html
-          printf '  <li><a href="local.xml">Local EPG XML</a> (%s)</li>\n' "$local_xml_size" >> index.html
-          printf '  <li><a href="local.xml.gz">Local EPG XML.GZ</a> (%s)</li>\n' "$local_gz_size" >> index.html
-          printf '</ul>\n' >> index.html
-          printf '<h3>Build Stats</h3>\n<ul>\n' >> index.html
-          printf '  <li>Merged Channels: %s</li>\n' "$merged_channels" >> index.html
-          printf '  <li>Local Channels: %s</li>\n' "$local_channels" >> index.html
-          printf '  <li>Merged Programmes: %s</li>\n' "$merged_programmes" >> index.html
-          printf '  <li>Local Programmes: %s</li>\n' "$local_programmes" >> index.html
-          printf '  <li>Days Kept: %s</li>\n' "$days_kept" >> index.html
-          printf '</ul>\n' >> index.html
-          printf '<h3>Logs</h3>\n<pre>\n' >> index.html
-          cat log.txt >> index.html
-          printf '\n</pre>\n</body>\n</html>\n' >> index.html
+          # Read stats and file sizes from stats.json
+          merged_channels=$(jq -r '.merged_channels' stats.json)
+          local_channels=$(jq -r '.local_channels' stats.json)
+          merged_programmes=$(jq -r '.merged_programmes' stats.json)
+          local_programmes=$(jq -r '.local_programmes' stats.json)
+          days_kept=$(jq -r '.days_kept' stats.json)
+          merged_xml_size=$(jq -r '.merged_xml_size' stats.json)
+          merged_gz_size=$(jq -r '.merged_gz_size' stats.json)
+          local_xml_size=$(jq -r '.local_xml_size' stats.json)
+          local_gz_size=$(jq -r '.local_gz_size' stats.json)
+
+          # Convert bytes to human-readable
+          human_size() { num=$1; 
+            if [ $num -lt 1024 ]; then echo "${num}B";
+            elif [ $num -lt $((1024*1024)) ]; then echo "$((num/1024))K";
+            elif [ $num -lt $((1024*1024*1024)) ]; then echo "$((num/1024/1024))M";
+            else echo "$((num/1024/1024/1024))G"; fi; }
+
+          merged_xml_hr=$(human_size $merged_xml_size)
+          merged_gz_hr=$(human_size $merged_gz_size)
+          local_xml_hr=$(human_size $local_xml_size)
+          local_gz_hr=$(human_size $local_gz_size)
+
+          # Build dashboard HTML
+          cat > index.html <<EOF
+<html>
+<head><title>EPG Dashboard</title></head>
+<body>
+<h2>EPG Dashboard</h2>
+<h3>Downloads</h3>
+<ul>
+  <li><a href="merged.xml">Merged EPG XML</a> ($merged_xml_hr)</li>
+  <li><a href="merged.xml.gz">Merged EPG XML.GZ</a> ($merged_gz_hr)</li>
+  <li><a href="local.xml">Local EPG XML</a> ($local_xml_hr)</li>
+  <li><a href="local.xml.gz">Local EPG XML.GZ</a> ($local_gz_hr)</li>
+</ul>
+<h3>Build Stats</h3>
+<ul>
+  <li>Merged Channels: $merged_channels</li>
+  <li>Local Channels: $local_channels</li>
+  <li>Merged Programmes: $merged_programmes</li>
+  <li>Local Programmes: $local_programmes</li>
+  <li>Days Kept: $days_kept</li>
+</ul>
+<h3>Logs</h3>
+<pre>
+$(cat log.txt)
+</pre>
+</body>
+</html>
+EOF
 
       - name: Create or update latest release and upload files
         uses: ncipollo/release-action@v1
