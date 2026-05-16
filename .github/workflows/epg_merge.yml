@@ -31,19 +31,23 @@ jobs:
           cat log.txt
 
       - name: Generate index.html
+        shell: bash
         run: |
+          # Sizes of files
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
 
+          # Extract stats from log
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}')
           days_kept=$(grep days_kept log.txt | awk '{print $2}')
 
-          cat > index.html <<EOF
+          # Build HTML safely
+          cat <<'EOF' > index.html
 <html>
 <head><title>EPG Dashboard</title></head>
 <body>
