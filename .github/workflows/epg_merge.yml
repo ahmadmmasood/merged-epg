@@ -1,4 +1,4 @@
-name: Update EPG
+name: Update EPG  # This is the workflow name you see in Actions
 
 on:
   workflow_dispatch:  # allows manual run
@@ -38,24 +38,20 @@ jobs:
       # === Step 5: Generate dashboard (index.html) ===
       - name: Generate dashboard
         run: |
-          #!/bin/bash
           set -e
           set -o pipefail
 
-          # Sizes of XML/GZ files
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-          # Extract stats from log.txt, fallback to 0 if not found
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}' || echo 0)
           local_channels=$(grep local_channels log.txt | awk '{print $2}' || echo 0)
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}' || echo 0)
           local_programmes=$(grep local_programmes log.txt | awk '{print $2}' || echo 0)
           days_kept=$(grep days_kept log.txt | awk '{print $2}' || echo 0)
 
-          # Generate HTML dashboard
           cat > index.html <<EOF
 <html>
 <head><title>EPG Dashboard</title></head>
