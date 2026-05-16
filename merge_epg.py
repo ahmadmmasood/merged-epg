@@ -1,5 +1,4 @@
 import gzip
-import os
 import re
 import requests
 import xml.etree.ElementTree as ET
@@ -13,28 +12,26 @@ def load_sources(path="epg_sources.txt"):
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            sources.append(line)
+            if line and not line.startswith("#"):
+                sources.append(line)
     return sources
 
 
 # =========================
-# LOAD MASTER CHANNEL LIST
+# LOAD MASTER
 # =========================
 def load_master(path="master_channels.txt"):
     channels = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            channels.append(line)
+            if line and not line.startswith("#"):
+                channels.append(line)
     return channels
 
 
 # =========================
-# NORMALIZATION (FIXED)
+# NORMALIZE
 # =========================
 def norm(s):
     s = s.lower()
@@ -45,14 +42,7 @@ def norm(s):
 
 
 # =========================
-# MATCH (MASTER-BASED ONLY)
-# =========================
-def is_local_match(channel_name, master_set):
-    return norm(channel_name) in master_set
-
-
-# =========================
-# FETCH (FIXED GZIP SAFE)
+# FETCH (FIXED GZIP)
 # =========================
 def fetch(url):
     print(f"Fetching {url}")
@@ -68,7 +58,7 @@ def fetch(url):
 
 
 # =========================
-# PARSE XML
+# PARSE
 # =========================
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
@@ -79,8 +69,8 @@ def parse(xml_bytes):
 # =========================
 def write_output(root, name):
     tree = ET.ElementTree(root)
-
     xml_file = f"{name}.xml"
+
     tree.write(xml_file, encoding="utf-8", xml_declaration=True)
 
     with open(xml_file, "rb") as f_in:
@@ -96,11 +86,13 @@ def main():
     master = load_master()
     master_set = set(norm(x) for x in master)
 
-    all_channels = {}
-    all_programmes = []
+    # store ALL channel versions (important fix)
+    channel_versions = defaultdict(list)
 
-    local_channels = {}
-    local_programmes = []
+    # alias map for programme linking (critical fix)
+    channel_alias = {}
+
+    programmes = []
 
     # =========================
     # PROCESS SOURCES
@@ -111,28 +103,73 @@ def main():
 
         for child in root:
 
+            # ---------------------
+            # CHANNELS
+            # ---------------------
             if child.tag == "channel":
                 cid = child.attrib.get("id")
+                if not cid:
+                    continue
 
-                if cid and cid not in all_channels:
-                    all_channels[cid] = child
+                channel_versions[cid].append(child)
 
-                    # FIX: correct itertext joining
-                    name = " ".join(t for t in child.itertext() if t and t.strip()).strip()
+                # build alias map
+                keys = set()
+                keys.add(cid)
 
-                    if is_local_match(name, master_set):
-                        local_channels[cid] = child
+                for dn in child.findall("display-name"):
+                    if dn.text:
+                        keys.add(norm(dn.text))
 
+                for k in keys:
+                    channel_alias[norm(k)] = cid
+
+            # ---------------------
+            # PROGRAMMES
+            # ---------------------
             elif child.tag == "programme":
-                cid = child.attrib.get("channel")
-
-                all_programmes.append(child)
-
-                if cid in local_channels:
-                    local_programmes.append(child)
+                programmes.append(child)
 
     # =========================
-    # BUILD MERGED XML
+    # SELECT BEST CHANNEL VERSION
+    # =========================
+    all_channels = {}
+
+    for cid, versions in channel_versions.items():
+        best = max(versions, key=lambda c: len(c.findall("display-name")))
+        all_channels[cid] = best
+
+    # =========================
+    # BUILD LOCAL SUBSET
+    # =========================
+    local_channels = {}
+    local_channel_ids = set()
+
+    for cid, ch in all_channels.items():
+        name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
+
+        if norm(name) in master_set:
+            local_channels[cid] = ch
+            local_channel_ids.add(cid)
+
+    # =========================
+    # ASSIGN PROGRAMMES
+    # =========================
+    all_programmes = []
+    local_programmes = []
+
+    for p in programmes:
+        raw = p.attrib.get("channel")
+
+        cid = channel_alias.get(norm(raw), raw)
+
+        all_programmes.append(p)
+
+        if cid in local_channel_ids:
+            local_programmes.append(p)
+
+    # =========================
+    # BUILD OUTPUT XML
     # =========================
     merged = ET.Element("tv")
     for c in all_channels.values():
@@ -140,9 +177,6 @@ def main():
     for p in all_programmes:
         merged.append(p)
 
-    # =========================
-    # BUILD LOCAL XML
-    # =========================
     local = ET.Element("tv")
     for c in local_channels.values():
         local.append(c)
