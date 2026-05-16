@@ -26,23 +26,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests lxml pytz
 
-      - name: Run EPG merge and capture logs
+      - name: Run merge_epg.py and capture logs
         run: |
           python merge_epg.py > log.txt 2>&1
           cat log.txt
 
-      # =========================
-      # BUILD DASHBOARD
-      # =========================
-      - name: Generate index.html
+      - name: Generate index.html dashboard
         run: |
-          # Sizes of files
+          # Calculate file sizes
           merged_xml_size=$(du -h merged.xml | cut -f1)
           merged_gz_size=$(du -h merged.xml.gz | cut -f1)
           local_xml_size=$(du -h local.xml | cut -f1)
           local_gz_size=$(du -h local.xml.gz | cut -f1)
 
-          # Extract stats from log
+          # Extract stats from logs
           merged_channels=$(grep merged_channels log.txt | awk '{print $2}')
           local_channels=$(grep local_channels log.txt | awk '{print $2}')
           merged_programmes=$(grep merged_programmes log.txt | awk '{print $2}')
@@ -82,16 +79,16 @@ $(cat log.txt)
 </html>
 EOF
 
-      - name: Create or update latest release and upload files
+      - name: Create or update latest release
         uses: ncipollo/release-action@v1
         with:
           tag: latest
           allowUpdates: true
           replacesArtifacts: true
           artifacts: |
-            local.xml
-            local.xml.gz
             merged.xml
             merged.xml.gz
+            local.xml
+            local.xml.gz
             index.html
             log.txt
