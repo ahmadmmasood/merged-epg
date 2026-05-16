@@ -78,7 +78,7 @@ def write_output(root, name):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
 
-    # Strip extra whitespace
+    # Strip extra whitespace in text/tail (optional, can keep as-is)
     for elem in root.iter():
         if elem.text:
             elem.text = elem.text.strip()
@@ -93,9 +93,9 @@ def write_output(root, name):
     # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Moderate gzip compression
+    # Moderate gzip compression, now level 9
     with open(xml_file, "rb") as f_in:
-        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=6) as f_out:
+        with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
 
     xml_size = os.path.getsize(xml_file)
@@ -151,13 +151,12 @@ def main():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
         all_channels[cid] = best
 
-    # Determine local channels
+    # Determine local channels (original logic untouched)
     local_channels = {}
     local_channel_ids = set()
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
-        # original local logic unchanged
         if any(
             name_norm == norm(m) or
             name_norm.startswith(norm(m) + " ") or
