@@ -59,6 +59,7 @@ def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
 
+    # Remove channels with no programmes for merged.xml
     if name == "merged":
         programmes = [p for p in root.findall("programme")]
         channels_with_programmes = set(p.attrib.get("channel") for p in programmes)
@@ -66,14 +67,17 @@ def write_output(root, name):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
 
+    # Strip extra whitespace
     for elem in root.iter():
         if elem.text:
             elem.text = elem.text.strip()
         if elem.tail:
             elem.tail = elem.tail.strip()
 
+    # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
+    # Maximum gzip compression
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
