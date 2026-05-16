@@ -1,92 +1,85 @@
 import gzip
+import os
 import re
 import requests
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 # =========================
-# LOAD FILES
+# LOAD SOURCES
 # =========================
-
 def load_sources(path="epg_sources.txt"):
+    sources = []
     with open(path, "r", encoding="utf-8") as f:
-        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            sources.append(line)
+    return sources
 
 
+# =========================
+# LOAD MASTER CHANNEL LIST
+# =========================
 def load_master(path="master_channels.txt"):
+    channels = []
     with open(path, "r", encoding="utf-8") as f:
-        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            channels.append(line)
+    return channels
 
 
 # =========================
-# NORMALIZATION (STRICT + SAFE)
+# NORMALIZATION
 # =========================
-
 def norm(s):
     s = s.lower()
     s = re.sub(r"\(.*?\)", "", s)
-    s = re.sub(r"[._\-]+", " ", s)
-    tokens = re.findall(r"[a-z0-9]+", s)
-    return " ".join(tokens).strip()
+    s = re.sub(r"[^a-z0-9]+", "", s)
+    return s.strip()
 
 
 # =========================
-# FETCH
+# MATCH
 # =========================
+def is_local_match(channel_name, master_set):
+    n = norm(channel_name)
+    if n in master_set:
+        return True
+    return False
 
+
+# =========================
+# FETCH (FIXED)
+# =========================
 def fetch(url):
     print(f"Fetching {url}")
     r = requests.get(url, timeout=60)
     r.raise_for_status()
-    return r.content
+
+    data = r.content
+
+    # FIX: proper gzip handling
+    if url.endswith(".gz"):
+        return gzip.decompress(data)
+
+    return data
 
 
+# =========================
+# PARSE
+# =========================
 def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
 
 # =========================
-# CHANNEL EXTRACTION
-# =========================
-
-def extract_channel_keys(channel):
-    keys = []
-
-    cid = channel.attrib.get("id", "")
-    if cid:
-        keys.append(cid)
-
-    for dn in channel.findall("display-name"):
-        if dn.text:
-            keys.append(dn.text)
-
-    return keys
-
-
-# =========================
-# MASTER SET
-# =========================
-
-def build_master_set(master_list):
-    return set(norm(x) for x in master_list)
-
-
-# =========================
-# MATCH (NO FUZZY GUESSING)
-# =========================
-
-def is_in_master(channel, master_set):
-    for key in extract_channel_keys(channel):
-        n = norm(key)
-        if n and n in master_set:
-            return True
-    return False
-
-
-# =========================
 # WRITE OUTPUT
 # =========================
-
 def write_output(root, name):
     tree = ET.ElementTree(root)
 
@@ -101,19 +94,20 @@ def write_output(root, name):
 # =========================
 # MAIN
 # =========================
-
 def main():
     sources = load_sources()
     master = load_master()
-    master_set = build_master_set(master)
+    master_set = set(norm(x) for x in master)
 
-    # -------------------------
-    # IMPORTANT FIX:
-    # store ALL channel versions
-    # -------------------------
-    channel_versions = defaultdict(list)
-    programmes = []
+    all_channels = {}
+    all_programmes = []
 
+    local_channels = {}
+    local_programmes = []
+
+    # =========================
+    # PROCESS SOURCES
+    # =========================
     for url in sources:
         xml_bytes = fetch(url)
         root = parse(xml_bytes)
@@ -122,78 +116,49 @@ def main():
 
             if child.tag == "channel":
                 cid = child.attrib.get("id")
-                if cid:
-                    channel_versions[cid].append(child)
+                if cid and cid not in all_channels:
+                    all_channels[cid] = child
+
+                    name = "".join(child.itertext())
+
+                    if is_local_match(name, master_set):
+                        local_channels[cid] = child
 
             elif child.tag == "programme":
-                programmes.append(child)
+                cid = child.attrib.get("channel")
+                all_programmes.append(child)
 
-    # -------------------------
-    # MERGE CHANNELS PROPERLY
-    # -------------------------
-    merged_channels = {}
+                if cid in local_channels:
+                    local_programmes.append(child)
 
-    for cid, versions in channel_versions.items():
+    # =========================
+    # BUILD XML
+    # =========================
+    merged = ET.Element("tv")
+    for c in all_channels.values():
+        merged.append(c)
+    for p in all_programmes:
+        merged.append(p)
 
-        # pick richest version (most display-name tags)
-        best = max(
-            versions,
-            key=lambda x: len(x.findall("display-name"))
-        )
+    local = ET.Element("tv")
+    for c in local_channels.values():
+        local.append(c)
+    for p in local_programmes:
+        local.append(p)
 
-        merged_channels[cid] = best
-
-    # -------------------------
-    # BUILD OUTPUTS
-    # -------------------------
-
-    merged_root = ET.Element("tv")
-    local_root = ET.Element("tv")
-
-    local_channel_ids = set()
-
-    # ALL channels in merged output
-    for c in merged_channels.values():
-        merged_root.append(c)
-
-    # LOCAL subset (STRICT master match)
-    for cid, c in merged_channels.items():
-        if is_in_master(c, master_set):
-            local_root.append(c)
-            local_channel_ids.add(cid)
-
-    # PROGRAMMES
-    merged_prog = []
-    local_prog = []
-
-    for p in programmes:
-        cid = p.attrib.get("channel")
-
-        merged_prog.append(p)
-
-        if cid in local_channel_ids:
-            local_prog.append(p)
-
-    for p in merged_prog:
-        merged_root.append(p)
-
-    for p in local_prog:
-        local_root.append(p)
-
-    # -------------------------
+    # =========================
     # STATS
-    # -------------------------
+    # =========================
     print("\n--- STATS ---")
-    print("Merged channels:", len(merged_channels))
-    print("Local channels:", len(local_channel_ids))
-    print("Merged programmes:", len(merged_prog))
-    print("Local programmes:", len(local_prog))
+    print("Merged channels:", len(all_channels))
+    print("Local channels:", len(local_channels))
+    print("Local programmes:", len(local_programmes))
 
-    # -------------------------
+    # =========================
     # OUTPUT
-    # -------------------------
-    write_output(merged_root, "merged")
-    write_output(local_root, "local")
+    # =========================
+    write_output(merged, "merged")
+    write_output(local, "local")
 
     print("Done")
 
