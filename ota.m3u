@@ -1,0 +1,217 @@
+#EXTM3U
+#EXTINF:-1 channel-id="2.1" channel-number="2.1" tvg-name="WMAR-HD",2.1 WMAR-HD
+http://192.168.1.215:5004/auto/2.1
+#EXTINF:-1 channel-id="2.2" channel-number="2.2" tvg-name="GRIT",2.2 GRIT
+http://192.168.1.215:5004/auto/2.2
+#EXTINF:-1 channel-id="2.3" channel-number="2.3" tvg-name="BOUNCE",2.3 BOUNCE
+http://192.168.1.215:5004/auto/2.3
+#EXTINF:-1 channel-id="2.4" channel-number="2.4" tvg-name="MYSTERY",2.4 MYSTERY
+http://192.168.1.215:5004/auto/2.4
+#EXTINF:-1 channel-id="2.5" channel-number="2.5" tvg-name="ION TV",2.5 ION TV
+http://192.168.1.215:5004/auto/2.5
+#EXTINF:-1 channel-id="2.6" channel-number="2.6" tvg-name="CourtTV",2.6 CourtTV
+http://192.168.1.215:5004/auto/2.6
+#EXTINF:-1 channel-id="2.7" channel-number="2.7" tvg-name="Newsy",2.7 Newsy
+http://192.168.1.215:5004/auto/2.7
+#EXTINF:-1 channel-id="2.8" channel-number="2.8" tvg-name="HSN",2.8 HSN
+http://192.168.1.215:5004/auto/2.8
+#EXTINF:-1 channel-id="4.1" channel-number="4.1" tvg-name="WRC-HD",4.1 WRC-HD
+http://192.168.1.215:5004/auto/4.1
+#EXTINF:-1 channel-id="4.2" channel-number="4.2" tvg-name="COZI",4.2 COZI
+http://192.168.1.215:5004/auto/4.2
+#EXTINF:-1 channel-id="4.3" channel-number="4.3" tvg-name="CRIMES",4.3 CRIMES
+http://192.168.1.215:5004/auto/4.3
+#EXTINF:-1 channel-id="4.4" channel-number="4.4" tvg-name="Oxygen",4.4 Oxygen
+http://192.168.1.215:5004/auto/4.4
+#EXTINF:-1 channel-id="5.1" channel-number="5.1" tvg-name="WTTG-DT",5.1 WTTG-DT
+http://192.168.1.215:5004/auto/5.1
+#EXTINF:-1 channel-id="5.2" channel-number="5.2" tvg-name="BUZZR",5.2 BUZZR
+http://192.168.1.215:5004/auto/5.2
+#EXTINF:-1 channel-id="5.3" channel-number="5.3" tvg-name="START",5.3 START
+http://192.168.1.215:5004/auto/5.3
+#EXTINF:-1 channel-id="7.1" channel-number="7.1" tvg-name="WJLA",7.1 WJLA
+http://192.168.1.215:5004/auto/7.1
+#EXTINF:-1 channel-id="7.2" channel-number="7.2" tvg-name="Charge!",7.2 Charge!
+http://192.168.1.215:5004/auto/7.2
+#EXTINF:-1 channel-id="7.3" channel-number="7.3" tvg-name="Comet",7.3 Comet
+http://192.168.1.215:5004/auto/7.3
+#EXTINF:-1 channel-id="7.4" channel-number="7.4" tvg-name="ROAR",7.4 ROAR
+http://192.168.1.215:5004/auto/7.4
+#EXTINF:-1 channel-id="9.1" channel-number="9.1" tvg-name="WUSA-HD",9.1 WUSA-HD
+http://192.168.1.215:5004/auto/9.1
+#EXTINF:-1 channel-id="9.2" channel-number="9.2" tvg-name="Crime",9.2 Crime
+http://192.168.1.215:5004/auto/9.2
+#EXTINF:-1 channel-id="9.3" channel-number="9.3" tvg-name="Quest",9.3 Quest
+http://192.168.1.215:5004/auto/9.3
+#EXTINF:-1 channel-id="9.4" channel-number="9.4" tvg-name="NEST",9.4 NEST
+http://192.168.1.215:5004/auto/9.4
+#EXTINF:-1 channel-id="9.5" channel-number="9.5" tvg-name="QVC",9.5 QVC
+http://192.168.1.215:5004/auto/9.5
+#EXTINF:-1 channel-id="11.1" channel-number="11.1" tvg-name="WBAL-DT",11.1 WBAL-DT
+http://192.168.1.215:5004/auto/11.1
+#EXTINF:-1 channel-id="11.2" channel-number="11.2" tvg-name="MeTV",11.2 MeTV
+http://192.168.1.215:5004/auto/11.2
+#EXTINF:-1 channel-id="11.3" channel-number="11.3" tvg-name="Story",11.3 Story
+http://192.168.1.215:5004/auto/11.3
+#EXTINF:-1 channel-id="11.4" channel-number="11.4" tvg-name="GetTV",11.4 GetTV
+http://192.168.1.215:5004/auto/11.4
+#EXTINF:-1 channel-id="11.5" channel-number="11.5" tvg-name="QVC",11.5 QVC
+http://192.168.1.215:5004/auto/11.5
+#EXTINF:-1 channel-id="13.1" channel-number="13.1" tvg-name="WJZ-TV",13.1 WJZ-TV
+http://192.168.1.215:5004/auto/13.1
+#EXTINF:-1 channel-id="13.2" channel-number="13.2" tvg-name="StartTV",13.2 StartTV
+http://192.168.1.215:5004/auto/13.2
+#EXTINF:-1 channel-id="13.3" channel-number="13.3" tvg-name="Dabl",13.3 Dabl
+http://192.168.1.215:5004/auto/13.3
+#EXTINF:-1 channel-id="13.4" channel-number="13.4" tvg-name="365BLK",13.4 365BLK
+http://192.168.1.215:5004/auto/13.4
+#EXTINF:-1 channel-id="13.5" channel-number="13.5" tvg-name="Catchy",13.5 Catchy
+http://192.168.1.215:5004/auto/13.5
+#EXTINF:-1 channel-id="13.6" channel-number="13.6" tvg-name="Movies",13.6 Movies
+http://192.168.1.215:5004/auto/13.6
+#EXTINF:-1 channel-id="14.1" channel-number="14.1" tvg-name="WFDC-DT",14.1 WFDC-DT
+http://192.168.1.215:5004/auto/14.1
+#EXTINF:-1 channel-id="14.2" channel-number="14.2" tvg-name="GREAT",14.2 GREAT
+http://192.168.1.215:5004/auto/14.2
+#EXTINF:-1 channel-id="14.3" channel-number="14.3" tvg-name="GRIT",14.3 GRIT
+http://192.168.1.215:5004/auto/14.3
+#EXTINF:-1 channel-id="14.4" channel-number="14.4" tvg-name="UniMas",14.4 UniMas
+http://192.168.1.215:5004/auto/14.4
+#EXTINF:-1 channel-id="20.1" channel-number="20.1" tvg-name="WDCA",20.1 WDCA
+http://192.168.1.215:5004/auto/20.1
+#EXTINF:-1 channel-id="20.2" channel-number="20.2" tvg-name="MOVIES",20.2 MOVIES
+http://192.168.1.215:5004/auto/20.2
+#EXTINF:-1 channel-id="20.3" channel-number="20.3" tvg-name="HEROES",20.3 HEROES
+http://192.168.1.215:5004/auto/20.3
+#EXTINF:-1 channel-id="20.4" channel-number="20.4" tvg-name="FOXWX",20.4 FOXWX
+http://192.168.1.215:5004/auto/20.4
+#EXTINF:-1 channel-id="22.1" channel-number="22.1" tvg-name="MPT-HD",22.1 MPT-HD
+http://192.168.1.215:5004/auto/22.1
+#EXTINF:-1 channel-id="22.2" channel-number="22.2" tvg-name="MPT-2",22.2 MPT-2
+http://192.168.1.215:5004/auto/22.2
+#EXTINF:-1 channel-id="22.3" channel-number="22.3" tvg-name="MPTKIDS",22.3 MPTKIDS
+http://192.168.1.215:5004/auto/22.3
+#EXTINF:-1 channel-id="22.4" channel-number="22.4" tvg-name="NHK-WLD",22.4 NHK-WLD
+http://192.168.1.215:5004/auto/22.4
+#EXTINF:-1 channel-id="25.1" channel-number="25.1" tvg-name="WDVM-SD",25.1 WDVM-SD
+http://192.168.1.215:5004/auto/25.1
+#EXTINF:-1 channel-id="26.1" channel-number="26.1" tvg-name="WETA-HD",26.1 WETA-HD
+http://192.168.1.215:5004/auto/26.1
+#EXTINF:-1 channel-id="26.2" channel-number="26.2" tvg-name="WETA UK",26.2 WETA UK
+http://192.168.1.215:5004/auto/26.2
+#EXTINF:-1 channel-id="26.3" channel-number="26.3" tvg-name="KIDS",26.3 KIDS
+http://192.168.1.215:5004/auto/26.3
+#EXTINF:-1 channel-id="26.4" channel-number="26.4" tvg-name="WORLD",26.4 WORLD
+http://192.168.1.215:5004/auto/26.4
+#EXTINF:-1 channel-id="26.5" channel-number="26.5" tvg-name="METRO",26.5 METRO
+http://192.168.1.215:5004/auto/26.5
+#EXTINF:-1 channel-id="32.1" channel-number="32.1" tvg-name="WHUT",32.1 WHUT
+http://192.168.1.215:5004/auto/32.1
+#EXTINF:-1 channel-id="32.2" channel-number="32.2" tvg-name="PBSKids",32.2 PBSKids
+http://192.168.1.215:5004/auto/32.2
+#EXTINF:-1 channel-id="44.1" channel-number="44.1" tvg-name="WZDC",44.1 WZDC
+http://192.168.1.215:5004/auto/44.1
+#EXTINF:-1 channel-id="44.2" channel-number="44.2" tvg-name="XITOS",44.2 XITOS
+http://192.168.1.215:5004/auto/44.2
+#EXTINF:-1 channel-id="50.1" channel-number="50.1" tvg-name="WDCW-DT",50.1 WDCW-DT
+http://192.168.1.215:5004/auto/50.1
+#EXTINF:-1 channel-id="50.2" channel-number="50.2" tvg-name="Antenna",50.2 Antenna
+http://192.168.1.215:5004/auto/50.2
+#EXTINF:-1 channel-id="54.1" channel-number="54.1" tvg-name="CWWNUV",54.1 CWWNUV
+http://192.168.1.215:5004/auto/54.1
+#EXTINF:-1 channel-id="54.2" channel-number="54.2" tvg-name="Antenna",54.2 Antenna
+http://192.168.1.215:5004/auto/54.2
+#EXTINF:-1 channel-id="54.3" channel-number="54.3" tvg-name="Comet",54.3 Comet
+http://192.168.1.215:5004/auto/54.3
+#EXTINF:-1 channel-id="54.4" channel-number="54.4" tvg-name="TheNest",54.4 TheNest
+http://192.168.1.215:5004/auto/54.4
+#EXTINF:-1 channel-id="66.1" channel-number="66.1" tvg-name="ION",66.1 ION
+http://192.168.1.215:5004/auto/66.1
+#EXTINF:-1 channel-id="66.2" channel-number="66.2" tvg-name="Bounce",66.2 Bounce
+http://192.168.1.215:5004/auto/66.2
+#EXTINF:-1 channel-id="66.3" channel-number="66.3" tvg-name="CourtTV",66.3 CourtTV
+http://192.168.1.215:5004/auto/66.3
+#EXTINF:-1 channel-id="66.4" channel-number="66.4" tvg-name="Laff",66.4 Laff
+http://192.168.1.215:5004/auto/66.4
+#EXTINF:-1 channel-id="66.5" channel-number="66.5" tvg-name="IONPlus",66.5 IONPlus
+http://192.168.1.215:5004/auto/66.5
+#EXTINF:-1 channel-id="66.6" channel-number="66.6" tvg-name="BUSTED",66.6 BUSTED
+http://192.168.1.215:5004/auto/66.6
+#EXTINF:-1 channel-id="66.7" channel-number="66.7" tvg-name="GameSho",66.7 GameSho
+http://192.168.1.215:5004/auto/66.7
+#EXTINF:-1 channel-id="66.8" channel-number="66.8" tvg-name="HSN",66.8 HSN
+http://192.168.1.215:5004/auto/66.8
+#EXTINF:-1 channel-id="68.1" channel-number="68.1" tvg-name="AltaVsn",68.1 AltaVsn
+http://192.168.1.215:5004/auto/68.1
+#EXTINF:-1 channel-id="68.2" channel-number="68.2" tvg-name="DEFY",68.2 DEFY
+http://192.168.1.215:5004/auto/68.2
+ahmadmasood@Macmini ~ % 
+ahmadmasood@Macmini ~ % 
+ahmadmasood@Macmini ~ % 
+ahmadmasood@Macmini ~ % vi ota.m3u  
+
+http://192.168.1.215:5004/auto/20.2
+#EXTINF:-1 channel-id="20.3" channel-number="20.3" tvg-name="HEROES",20.3 HEROES
+http://192.168.1.215:5004/auto/20.3
+#EXTINF:-1 channel-id="20.4" channel-number="20.4" tvg-name="FOXWX",20.4 FOXWX
+http://192.168.1.215:5004/auto/20.4
+#EXTINF:-1 channel-id="22.1" channel-number="22.1" tvg-name="MPT-HD",22.1 MPT-HD
+http://192.168.1.215:5004/auto/22.1
+#EXTINF:-1 channel-id="22.2" channel-number="22.2" tvg-name="MPT-2",22.2 MPT-2
+http://192.168.1.215:5004/auto/22.2
+#EXTINF:-1 channel-id="22.3" channel-number="22.3" tvg-name="MPTKIDS",22.3 MPTKIDS
+http://192.168.1.215:5004/auto/22.3
+#EXTINF:-1 channel-id="22.4" channel-number="22.4" tvg-name="NHK-WLD",22.4 NHK-WLD
+http://192.168.1.215:5004/auto/22.4
+#EXTINF:-1 channel-id="25.1" channel-number="25.1" tvg-name="WDVM-SD",25.1 WDVM-SD
+http://192.168.1.215:5004/auto/25.1
+#EXTINF:-1 channel-id="26.1" channel-number="26.1" tvg-name="WETA-HD",26.1 WETA-HD
+http://192.168.1.215:5004/auto/26.1
+#EXTINF:-1 channel-id="26.2" channel-number="26.2" tvg-name="WETA UK",26.2 WETA UK
+http://192.168.1.215:5004/auto/26.2
+#EXTINF:-1 channel-id="26.3" channel-number="26.3" tvg-name="KIDS",26.3 KIDS
+http://192.168.1.215:5004/auto/26.3
+#EXTINF:-1 channel-id="26.4" channel-number="26.4" tvg-name="WORLD",26.4 WORLD
+http://192.168.1.215:5004/auto/26.4
+#EXTINF:-1 channel-id="26.5" channel-number="26.5" tvg-name="METRO",26.5 METRO
+http://192.168.1.215:5004/auto/26.5
+#EXTINF:-1 channel-id="32.1" channel-number="32.1" tvg-name="WHUT",32.1 WHUT
+http://192.168.1.215:5004/auto/32.1
+#EXTINF:-1 channel-id="32.2" channel-number="32.2" tvg-name="PBSKids",32.2 PBSKids
+http://192.168.1.215:5004/auto/32.2
+#EXTINF:-1 channel-id="44.1" channel-number="44.1" tvg-name="WZDC",44.1 WZDC
+http://192.168.1.215:5004/auto/44.1
+#EXTINF:-1 channel-id="44.2" channel-number="44.2" tvg-name="XITOS",44.2 XITOS
+http://192.168.1.215:5004/auto/44.2
+#EXTINF:-1 channel-id="50.1" channel-number="50.1" tvg-name="WDCW-DT",50.1 WDCW-DT
+http://192.168.1.215:5004/auto/50.1
+#EXTINF:-1 channel-id="50.2" channel-number="50.2" tvg-name="Antenna",50.2 Antenna
+http://192.168.1.215:5004/auto/50.2
+#EXTINF:-1 channel-id="54.1" channel-number="54.1" tvg-name="CWWNUV",54.1 CWWNUV
+http://192.168.1.215:5004/auto/54.1
+#EXTINF:-1 channel-id="54.2" channel-number="54.2" tvg-name="Antenna",54.2 Antenna
+http://192.168.1.215:5004/auto/54.2
+#EXTINF:-1 channel-id="54.3" channel-number="54.3" tvg-name="Comet",54.3 Comet
+http://192.168.1.215:5004/auto/54.3
+#EXTINF:-1 channel-id="54.4" channel-number="54.4" tvg-name="TheNest",54.4 TheNest
+http://192.168.1.215:5004/auto/54.4
+#EXTINF:-1 channel-id="66.1" channel-number="66.1" tvg-name="ION",66.1 ION
+http://192.168.1.215:5004/auto/66.1
+#EXTINF:-1 channel-id="66.2" channel-number="66.2" tvg-name="Bounce",66.2 Bounce
+http://192.168.1.215:5004/auto/66.2
+#EXTINF:-1 channel-id="66.3" channel-number="66.3" tvg-name="CourtTV",66.3 CourtTV
+http://192.168.1.215:5004/auto/66.3
+#EXTINF:-1 channel-id="66.4" channel-number="66.4" tvg-name="Laff",66.4 Laff
+http://192.168.1.215:5004/auto/66.4
+#EXTINF:-1 channel-id="66.5" channel-number="66.5" tvg-name="IONPlus",66.5 IONPlus
+http://192.168.1.215:5004/auto/66.5
+#EXTINF:-1 channel-id="66.6" channel-number="66.6" tvg-name="BUSTED",66.6 BUSTED
+http://192.168.1.215:5004/auto/66.6
+#EXTINF:-1 channel-id="66.7" channel-number="66.7" tvg-name="GameSho",66.7 GameSho
+http://192.168.1.215:5004/auto/66.7
+#EXTINF:-1 channel-id="66.8" channel-number="66.8" tvg-name="HSN",66.8 HSN
+http://192.168.1.215:5004/auto/66.8
+#EXTINF:-1 channel-id="68.1" channel-number="68.1" tvg-name="AltaVsn",68.1 AltaVsn
+http://192.168.1.215:5004/auto/68.1
+#EXTINF:-1 channel-id="68.2" channel-number="68.2" tvg-name="DEFY",68.2 DEFY
+http://192.168.1.215:5004/auto/68.2
