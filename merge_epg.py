@@ -146,8 +146,15 @@ def main():
             print(f"Skipping Arabica feed: {url}")
             continue
 
-        xml_bytes = fetch(url)
-        root = parse(xml_bytes)
+        try:
+            xml_bytes = fetch(url)
+            root = parse(xml_bytes)
+        except Exception as e:
+            print("\n==================== FEED FAILED ====================")
+            print(f"FAILED FEED: {url}")
+            print(f"ERROR: {e}")
+            print("=====================================================\n")
+            continue
 
         for child in root:
             if child.tag == "channel":
