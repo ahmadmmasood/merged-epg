@@ -13,17 +13,21 @@ import hashlib
 DAYS_TO_KEEP = 1
 
 #=========================
-# CACHE
+# CACHE + STATE
 #=========================
 CACHE_DIR = "cache"
+STATE_DIR = "state"
+
 os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(STATE_DIR, exist_ok=True)
 
 def cache_path(url):
     safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
     return os.path.join(CACHE_DIR, f"{safe}.xml")
 
-def hash_path(cache_file):
-    return cache_file + ".hash"
+def state_path(url):
+    safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
+    return os.path.join(STATE_DIR, f"{safe}.hash")
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
@@ -150,18 +154,27 @@ def main():
     cutoff = now + timedelta(days=DAYS_TO_KEEP)
 
     for url in sources:
-        if "ArabicEPG.xml" in url:
-            print(f"Skipping Arabica feed: {url}")
-            continue
 
         cache_file = cache_path(url)
-        hfile = hash_path(cache_file)
+        state_file = state_path(url)
+
+        used_cache = False
+
+        # -------------------------
+        # STEP 1: check previous hash
+        # -------------------------
+        old_hash = None
+        if os.path.exists(state_file):
+            with open(state_file, "r") as f:
+                old_hash = f.read().strip()
 
         xml_bytes = None
         root = None
-        used_cache = False
 
         try:
+            # -------------------------
+            # STEP 2: fetch feed
+            # -------------------------
             xml_bytes = fetch(url)
 
             if not is_valid_xml(xml_bytes):
@@ -169,22 +182,29 @@ def main():
 
             new_hash = sha256(xml_bytes)
 
-            old_hash = None
-            if os.path.exists(hfile):
-                with open(hfile, "r") as f:
-                    old_hash = f.read().strip()
+            # -------------------------
+            # STEP 3: unchanged → use cache only
+            # -------------------------
+            if old_hash == new_hash and os.path.exists(cache_file):
+                print(f"[UNCHANGED] Using cached version: {url}")
 
-            # Only update cache if changed
-            if new_hash != old_hash:
+                with open(cache_file, "rb") as f:
+                    xml_bytes = f.read()
+
+                root = parse(xml_bytes)
+                used_cache = True
+
+            else:
+                # -------------------------
+                # NEW / CHANGED FEED
+                # -------------------------
                 with open(cache_file, "wb") as f:
                     f.write(xml_bytes)
 
-                with open(hfile, "w") as f:
+                with open(state_file, "w") as f:
                     f.write(new_hash)
-            else:
-                print(f"[SKIP CACHE UPDATE] No change: {url}")
 
-            root = parse(xml_bytes)
+                root = parse(xml_bytes)
 
         except Exception as e:
             print("\n==================== FEED FAILED ====================")
@@ -214,6 +234,9 @@ def main():
         if used_cache:
             print(f"Using cached version: {url}")
 
+        # -------------------------
+        # PROCESS XML
+        # -------------------------
         for child in root:
             if child.tag == "channel":
                 cid = child.attrib.get("id")
@@ -236,6 +259,9 @@ def main():
                 else:
                     programmes_by_channel[cid].append(child)
 
+    # -------------------------
+    # BUILD CHANNELS
+    # -------------------------
     all_channels = {}
     for cid, versions in channel_versions.items():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
@@ -257,6 +283,9 @@ def main():
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
+    # -------------------------
+    # BUILD PROGRAMMES
+    # -------------------------
     merged_programmes = []
     local_programmes = []
 
@@ -275,6 +304,9 @@ def main():
         if cid in local_channel_ids:
             local_programmes.extend(unique)
 
+    # -------------------------
+    # OUTPUT
+    # -------------------------
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
