@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta
 import os
+import hashlib
 
 #=========================
 # CONFIG
@@ -20,6 +21,12 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 def cache_path(url):
     safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
     return os.path.join(CACHE_DIR, f"{safe}.xml")
+
+def hash_path(cache_file):
+    return cache_file + ".hash"
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
 
 def is_valid_xml(xml_bytes):
     if not xml_bytes or len(xml_bytes) < 100:
@@ -148,6 +155,7 @@ def main():
             continue
 
         cache_file = cache_path(url)
+        hfile = hash_path(cache_file)
 
         xml_bytes = None
         root = None
@@ -159,10 +167,24 @@ def main():
             if not is_valid_xml(xml_bytes):
                 raise ValueError("Fetched XML invalid")
 
-            root = parse(xml_bytes)
+            new_hash = sha256(xml_bytes)
 
-            with open(cache_file, "wb") as f:
-                f.write(xml_bytes)
+            old_hash = None
+            if os.path.exists(hfile):
+                with open(hfile, "r") as f:
+                    old_hash = f.read().strip()
+
+            # Only update cache if changed
+            if new_hash != old_hash:
+                with open(cache_file, "wb") as f:
+                    f.write(xml_bytes)
+
+                with open(hfile, "w") as f:
+                    f.write(new_hash)
+            else:
+                print(f"[SKIP CACHE UPDATE] No change: {url}")
+
+            root = parse(xml_bytes)
 
         except Exception as e:
             print("\n==================== FEED FAILED ====================")
