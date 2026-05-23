@@ -160,44 +160,46 @@ def main():
 
         used_cache = False
 
-        # -------------------------
-        # STEP 1: check previous hash
-        # -------------------------
+        # =========================
+        # STEP 1: CHECK CACHE FIRST (NO DOWNLOAD IF UNCHANGED)
+        # =========================
         old_hash = None
         if os.path.exists(state_file):
             with open(state_file, "r") as f:
                 old_hash = f.read().strip()
 
-        xml_bytes = None
-        root = None
+        if os.path.exists(cache_file):
+            with open(cache_file, "rb") as f:
+                cached_bytes = f.read()
 
-        try:
-            # -------------------------
-            # STEP 2: fetch feed
-            # -------------------------
-            xml_bytes = fetch(url)
+            if is_valid_xml(cached_bytes):
+                cached_hash = sha256(cached_bytes)
 
-            if not is_valid_xml(xml_bytes):
-                raise ValueError("Fetched XML invalid")
+                if old_hash == cached_hash:
+                    print(f"[CACHE HIT - SKIPPING DOWNLOAD] {url}")
 
-            new_hash = sha256(xml_bytes)
+                    root = parse(cached_bytes)
+                    used_cache = True
 
-            # -------------------------
-            # STEP 3: unchanged → use cache only
-            # -------------------------
-            if old_hash == new_hash and os.path.exists(cache_file):
-                print(f"[UNCHANGED] Using cached version: {url}")
-
-                with open(cache_file, "rb") as f:
-                    xml_bytes = f.read()
-
-                root = parse(xml_bytes)
-                used_cache = True
-
+                else:
+                    root = None
             else:
-                # -------------------------
-                # NEW / CHANGED FEED
-                # -------------------------
+                root = None
+        else:
+            root = None
+
+        # =========================
+        # STEP 2: ONLY DOWNLOAD IF CACHE NOT USED
+        # =========================
+        if not used_cache:
+            try:
+                xml_bytes = fetch(url)
+
+                if not is_valid_xml(xml_bytes):
+                    raise ValueError("Fetched XML invalid")
+
+                new_hash = sha256(xml_bytes)
+
                 with open(cache_file, "wb") as f:
                     f.write(xml_bytes)
 
@@ -206,37 +208,34 @@ def main():
 
                 root = parse(xml_bytes)
 
-        except Exception as e:
-            print("\n==================== FEED FAILED ====================")
-            print(f"FAILED FEED: {url}")
-            print(f"ERROR: {e}")
-            print("TRYING CACHE")
-            print("=====================================================\n")
+            except Exception as e:
+                print("\n==================== FEED FAILED ====================")
+                print(f"FAILED FEED: {url}")
+                print(f"ERROR: {e}")
+                print("TRYING CACHE")
+                print("=====================================================\n")
 
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "rb") as f:
-                        xml_bytes = f.read()
+                if os.path.exists(cache_file):
+                    try:
+                        with open(cache_file, "rb") as f:
+                            xml_bytes = f.read()
 
-                    if not is_valid_xml(xml_bytes):
-                        raise ValueError("Cached XML invalid")
+                        if not is_valid_xml(xml_bytes):
+                            raise ValueError("Cached XML invalid")
 
-                    root = parse(xml_bytes)
-                    used_cache = True
+                        root = parse(xml_bytes)
+                        used_cache = True
 
-                except Exception as ce:
-                    print(f"Cache also invalid: {ce}")
+                    except Exception as ce:
+                        print(f"Cache also invalid: {ce}")
+                        continue
+                else:
+                    print("No cache available, skipping")
                     continue
-            else:
-                print("No cache available, skipping")
-                continue
 
-        if used_cache:
-            print(f"Using cached version: {url}")
-
-        # -------------------------
+        # =========================
         # PROCESS XML
-        # -------------------------
+        # =========================
         for child in root:
             if child.tag == "channel":
                 cid = child.attrib.get("id")
@@ -259,9 +258,9 @@ def main():
                 else:
                     programmes_by_channel[cid].append(child)
 
-    # -------------------------
+    # =========================
     # BUILD CHANNELS
-    # -------------------------
+    # =========================
     all_channels = {}
     for cid, versions in channel_versions.items():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
@@ -283,9 +282,9 @@ def main():
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
-    # -------------------------
+    # =========================
     # BUILD PROGRAMMES
-    # -------------------------
+    # =========================
     merged_programmes = []
     local_programmes = []
 
@@ -304,9 +303,9 @@ def main():
         if cid in local_channel_ids:
             local_programmes.extend(unique)
 
-    # -------------------------
+    # =========================
     # OUTPUT
-    # -------------------------
+    # =========================
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
