@@ -28,8 +28,11 @@ jobs:
 
       - name: Run EPG merge
         run: |
-          python merge_epg.py > log.txt 2>&1
+          set +e
+          python -u merge_epg.py > log.txt 2>&1
+          EXIT_CODE=$?
           cat log.txt
+          exit $EXIT_CODE
 
       - name: Generate dashboard
         run: |
