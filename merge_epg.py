@@ -12,7 +12,7 @@ import os
 DAYS_TO_KEEP = 1
 
 #=========================
-# CACHE (ADDED)
+# CACHE
 #=========================
 CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -20,6 +20,15 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 def cache_path(url):
     safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
     return os.path.join(CACHE_DIR, f"{safe}.xml")
+
+def is_valid_xml(xml_bytes):
+    if not xml_bytes or len(xml_bytes) < 100:
+        return False
+    try:
+        root = ET.fromstring(xml_bytes)
+        return root.tag == "tv"
+    except:
+        return False
 
 #=========================
 # HELPERS
@@ -63,29 +72,17 @@ def fetch(url):
     print(f"Downloaded {len(data)} bytes from {url}")
 
     if not data:
-        raise ValueError(f"Empty response from {url}")
+        raise ValueError("Empty response")
 
     if url.endswith(".gz"):
-        try:
-            data = gzip.decompress(data)
-            print(f"Decompressed size: {len(data)} bytes")
-        except Exception as e:
-            raise ValueError(f"Gzip decompression failed for {url}: {e}")
+        data = gzip.decompress(data)
+        print(f"Decompressed size: {len(data)} bytes")
 
     return data
 
 def parse(xml_bytes):
     if not xml_bytes:
-        raise ValueError("XML data is empty")
-
-    preview = xml_bytes[:200]
-
-    try:
-        print("XML preview:")
-        print(preview.decode("utf-8", errors="ignore"))
-    except:
-        pass
-
+        raise ValueError("Empty XML")
     return ET.fromstring(xml_bytes)
 
 def remove_empty_elements(elem):
@@ -126,9 +123,10 @@ def write_output(root, name):
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
 
-    xml_size = os.path.getsize(xml_file)
-    gz_size = os.path.getsize(f"{xml_file}.gz")
-    return xml_size, gz_size
+    return (
+        os.path.getsize(xml_file),
+        os.path.getsize(f"{xml_file}.gz")
+    )
 
 #=========================
 # MAIN
@@ -151,11 +149,18 @@ def main():
 
         cache_file = cache_path(url)
 
+        xml_bytes = None
+        root = None
+        used_cache = False
+
         try:
             xml_bytes = fetch(url)
+
+            if not is_valid_xml(xml_bytes):
+                raise ValueError("Fetched XML invalid")
+
             root = parse(xml_bytes)
 
-            # save good cache (FAST, no extra requests)
             with open(cache_file, "wb") as f:
                 f.write(xml_bytes)
 
@@ -163,27 +168,41 @@ def main():
             print("\n==================== FEED FAILED ====================")
             print(f"FAILED FEED: {url}")
             print(f"ERROR: {e}")
-            print("USING CACHE IF AVAILABLE")
+            print("TRYING CACHE")
             print("=====================================================\n")
 
             if os.path.exists(cache_file):
-                print(f"Loading cached feed for {url}")
-                with open(cache_file, "rb") as f:
-                    xml_bytes = f.read()
-                root = parse(xml_bytes)
+                try:
+                    with open(cache_file, "rb") as f:
+                        xml_bytes = f.read()
+
+                    if not is_valid_xml(xml_bytes):
+                        raise ValueError("Cached XML invalid")
+
+                    root = parse(xml_bytes)
+                    used_cache = True
+
+                except Exception as ce:
+                    print(f"Cache also invalid: {ce}")
+                    continue
             else:
-                print(f"No cache available, skipping {url}")
+                print("No cache available, skipping")
                 continue
+
+        if used_cache:
+            print(f"Using cached version: {url}")
 
         for child in root:
             if child.tag == "channel":
                 cid = child.attrib.get("id")
                 if cid:
                     channel_versions[cid].append(child)
+
             elif child.tag == "programme":
                 cid = child.attrib.get("channel")
                 if not cid:
                     continue
+
                 start = child.attrib.get("start")
                 if start:
                     try:
@@ -202,9 +221,11 @@ def main():
 
     local_channels = {}
     local_channel_ids = set()
+
     for cid, ch in all_channels.items():
         name = " ".join(t for t in ch.itertext() if t and t.strip()).strip()
         name_norm = norm(name)
+
         if any(
             name_norm == norm(m) or
             name_norm.startswith(norm(m) + " ") or
@@ -220,12 +241,15 @@ def main():
     for cid, plist in programmes_by_channel.items():
         seen = set()
         unique = []
+
         for p in plist:
             key = (p.attrib.get("channel"), p.attrib.get("start"), p.attrib.get("stop"))
             if key not in seen:
                 unique.append(p)
                 seen.add(key)
+
         merged_programmes.extend(unique)
+
         if cid in local_channel_ids:
             local_programmes.extend(unique)
 
