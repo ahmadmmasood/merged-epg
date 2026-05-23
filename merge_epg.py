@@ -44,14 +44,38 @@ def parse_time(s):
 
 def fetch(url):
     print(f"Fetching {url}")
+
     r = requests.get(url, timeout=60)
     r.raise_for_status()
+
     data = r.content
+
+    print(f"Downloaded {len(data)} bytes from {url}")
+
+    if not data:
+        raise ValueError(f"Empty response from {url}")
+
     if url.endswith(".gz"):
-        return gzip.decompress(data)
+        try:
+            data = gzip.decompress(data)
+            print(f"Decompressed size: {len(data)} bytes")
+        except Exception as e:
+            raise ValueError(f"Gzip decompression failed for {url}: {e}")
+
     return data
 
 def parse(xml_bytes):
+    if not xml_bytes:
+        raise ValueError("XML data is empty")
+
+    preview = xml_bytes[:200]
+
+    try:
+        print("XML preview:")
+        print(preview.decode("utf-8", errors="ignore"))
+    except:
+        pass
+
     return ET.fromstring(xml_bytes)
 
 def remove_empty_elements(elem):
