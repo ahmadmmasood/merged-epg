@@ -12,6 +12,16 @@ import os
 DAYS_TO_KEEP = 1
 
 #=========================
+# CACHE (ADDED)
+#=========================
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+def cache_path(url):
+    safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
+    return os.path.join(CACHE_DIR, f"{safe}.xml")
+
+#=========================
 # HELPERS
 #=========================
 def load_sources(path="epg_sources.txt"):
@@ -79,7 +89,6 @@ def parse(xml_bytes):
     return ET.fromstring(xml_bytes)
 
 def remove_empty_elements(elem):
-    # recursively remove elements with no text and no children
     for child in list(elem):
         remove_empty_elements(child)
         if (not child.text or not child.text.strip()) and len(child) == 0:
@@ -94,7 +103,6 @@ def write_output(root, name):
     tree = ET.ElementTree(root)
     xml_file = f"{name}.xml"
 
-    # Remove channels with no programmes for merged.xml
     if name == "merged":
         programmes = [p for p in root.findall("programme")]
         channels_with_programmes = set(p.attrib.get("channel") for p in programmes)
@@ -102,22 +110,18 @@ def write_output(root, name):
             if c.attrib.get("id") not in channels_with_programmes:
                 root.remove(c)
 
-    # Strip extra whitespace in text/tail (optional)
     for elem in root.iter():
         if elem.text:
             elem.text = elem.text.strip()
         if elem.tail:
             elem.tail = elem.tail.strip()
 
-    # Remove empty elements and attributes
     remove_empty_elements(root)
     for elem in root.iter():
         remove_empty_attributes(elem)
 
-    # Write minified XML
     tree.write(xml_file, encoding="utf-8", xml_declaration=True, method="xml")
 
-    # Gzip compression, level 9
     with open(xml_file, "rb") as f_in:
         with gzip.open(f"{xml_file}.gz", "wb", compresslevel=9) as f_out:
             f_out.write(f_in.read())
@@ -141,20 +145,35 @@ def main():
     cutoff = now + timedelta(days=DAYS_TO_KEEP)
 
     for url in sources:
-        # Skip Arabica feed entirely
         if "ArabicEPG.xml" in url:
             print(f"Skipping Arabica feed: {url}")
             continue
 
+        cache_file = cache_path(url)
+
         try:
             xml_bytes = fetch(url)
             root = parse(xml_bytes)
+
+            # save good cache (FAST, no extra requests)
+            with open(cache_file, "wb") as f:
+                f.write(xml_bytes)
+
         except Exception as e:
             print("\n==================== FEED FAILED ====================")
             print(f"FAILED FEED: {url}")
             print(f"ERROR: {e}")
+            print("USING CACHE IF AVAILABLE")
             print("=====================================================\n")
-            continue
+
+            if os.path.exists(cache_file):
+                print(f"Loading cached feed for {url}")
+                with open(cache_file, "rb") as f:
+                    xml_bytes = f.read()
+                root = parse(xml_bytes)
+            else:
+                print(f"No cache available, skipping {url}")
+                continue
 
         for child in root:
             if child.tag == "channel":
@@ -176,13 +195,11 @@ def main():
                 else:
                     programmes_by_channel[cid].append(child)
 
-    # Pick the best channel version
     all_channels = {}
     for cid, versions in channel_versions.items():
         best = max(versions, key=lambda c: len(c.findall("display-name")))
         all_channels[cid] = best
 
-    # Determine local channels
     local_channels = {}
     local_channel_ids = set()
     for cid, ch in all_channels.items():
@@ -197,12 +214,10 @@ def main():
             local_channels[cid] = ch
             local_channel_ids.add(cid)
 
-    # Split programmes
     merged_programmes = []
     local_programmes = []
 
     for cid, plist in programmes_by_channel.items():
-        # Fast duplicate removal based on (channel, start, stop)
         seen = set()
         unique = []
         for p in plist:
@@ -214,7 +229,6 @@ def main():
         if cid in local_channel_ids:
             local_programmes.extend(unique)
 
-    # Build XML roots
     merged_root = ET.Element("tv")
     local_root = ET.Element("tv")
 
@@ -228,7 +242,6 @@ def main():
     for p in local_programmes:
         local_root.append(p)
 
-    # Write output
     merged_xml_size, merged_gz_size = write_output(merged_root, "merged")
     local_xml_size, local_gz_size = write_output(local_root, "local")
 
@@ -244,8 +257,5 @@ def main():
     print(f"local_gz_size {local_gz_size // (1024*1024)}M")
     print("Done.")
 
-#=========================
-# ENTRY POINT
-#=========================
 if __name__ == "__main__":
     main()
