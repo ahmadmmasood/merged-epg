@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import os
 import hashlib
+import json
 
 #=========================
 # CONFIG
@@ -27,7 +28,7 @@ def cache_path(url):
 
 def state_path(url):
     safe = re.sub(r'[^a-zA-Z0-9]', '_', url)
-    return os.path.join(STATE_DIR, f"{safe}.hash")
+    return os.path.join(STATE_DIR, f"{safe}.json")
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
@@ -73,9 +74,34 @@ def parse_time(s):
     return datetime.strptime(s[:14], "%Y%m%d%H%M%S")
 
 def fetch(url):
-    print(f"Fetching {url}")
+    print(f"Checking {url}")
 
-    r = requests.get(url, timeout=60)
+    headers = {}
+
+    meta_file = state_path(url)
+
+    # Load cache metadata
+    if os.path.exists(meta_file):
+        try:
+            with open(meta_file, "r") as f:
+                meta = json.load(f)
+
+            if meta.get("etag"):
+                headers["If-None-Match"] = meta["etag"]
+
+            if meta.get("last_modified"):
+                headers["If-Modified-Since"] = meta["last_modified"]
+
+        except:
+            pass
+
+    r = requests.get(url, headers=headers, timeout=60)
+
+    # Server confirms cache still valid
+    if r.status_code == 304:
+        print(f"[NOT MODIFIED] {url}")
+        return None, True
+
     r.raise_for_status()
 
     data = r.content
@@ -89,7 +115,17 @@ def fetch(url):
         data = gzip.decompress(data)
         print(f"Decompressed size: {len(data)} bytes")
 
-    return data
+    # Save metadata
+    meta = {
+        "etag": r.headers.get("ETag"),
+        "last_modified": r.headers.get("Last-Modified"),
+        "hash": sha256(data)
+    }
+
+    with open(meta_file, "w") as f:
+        json.dump(meta, f)
+
+    return data, False
 
 def parse(xml_bytes):
     if not xml_bytes:
@@ -156,82 +192,59 @@ def main():
     for url in sources:
 
         cache_file = cache_path(url)
-        state_file = state_path(url)
 
         used_cache = False
 
-        # =========================
-        # STEP 1: CHECK CACHE FIRST (NO DOWNLOAD IF UNCHANGED)
-        # =========================
-        old_hash = None
-        if os.path.exists(state_file):
-            with open(state_file, "r") as f:
-                old_hash = f.read().strip()
+        try:
+            xml_bytes, not_modified = fetch(url)
 
-        if os.path.exists(cache_file):
-            with open(cache_file, "rb") as f:
-                cached_bytes = f.read()
+            # Use cache if server says unchanged
+            if not_modified:
+                if not os.path.exists(cache_file):
+                    raise ValueError("Server returned 304 but cache missing")
 
-            if is_valid_xml(cached_bytes):
-                cached_hash = sha256(cached_bytes)
-
-                if old_hash == cached_hash:
-                    print(f"[CACHE HIT - SKIPPING DOWNLOAD] {url}")
-
-                    root = parse(cached_bytes)
-                    used_cache = True
-
-                else:
-                    root = None
-            else:
-                root = None
-        else:
-            root = None
-
-        # =========================
-        # STEP 2: ONLY DOWNLOAD IF CACHE NOT USED
-        # =========================
-        if not used_cache:
-            try:
-                xml_bytes = fetch(url)
+                with open(cache_file, "rb") as f:
+                    xml_bytes = f.read()
 
                 if not is_valid_xml(xml_bytes):
-                    raise ValueError("Fetched XML invalid")
+                    raise ValueError("Cached XML invalid")
 
-                new_hash = sha256(xml_bytes)
+                root = parse(xml_bytes)
+                used_cache = True
+
+            else:
+                if not is_valid_xml(xml_bytes):
+                    raise ValueError("Fetched XML invalid")
 
                 with open(cache_file, "wb") as f:
                     f.write(xml_bytes)
 
-                with open(state_file, "w") as f:
-                    f.write(new_hash)
-
                 root = parse(xml_bytes)
 
-            except Exception as e:
-                print("\n==================== FEED FAILED ====================")
-                print(f"FAILED FEED: {url}")
-                print(f"ERROR: {e}")
-                print("TRYING CACHE")
-                print("=====================================================\n")
+        except Exception as e:
+            print("\n==================== FEED FAILED ====================")
+            print(f"FAILED FEED: {url}")
+            print(f"ERROR: {e}")
+            print("TRYING CACHE")
+            print("=====================================================\n")
 
-                if os.path.exists(cache_file):
-                    try:
-                        with open(cache_file, "rb") as f:
-                            xml_bytes = f.read()
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "rb") as f:
+                        xml_bytes = f.read()
 
-                        if not is_valid_xml(xml_bytes):
-                            raise ValueError("Cached XML invalid")
+                    if not is_valid_xml(xml_bytes):
+                        raise ValueError("Cached XML invalid")
 
-                        root = parse(xml_bytes)
-                        used_cache = True
+                    root = parse(xml_bytes)
+                    used_cache = True
 
-                    except Exception as ce:
-                        print(f"Cache also invalid: {ce}")
-                        continue
-                else:
-                    print("No cache available, skipping")
+                except Exception as ce:
+                    print(f"Cache also invalid: {ce}")
                     continue
+            else:
+                print("No cache available, skipping")
+                continue
 
         # =========================
         # PROCESS XML
